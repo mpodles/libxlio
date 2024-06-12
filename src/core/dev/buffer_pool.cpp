@@ -97,8 +97,10 @@ bool buffer_pool::expand(size_t count)
     uint8_t *data_ptr = nullptr;
     uint8_t *desc_ptr;
 
-    __log_info_dbg("Expanding %s%s pool", m_buf_size ? "" : "zcopy ",
-                   m_p_bpool_stat->is_rx ? "Rx" : "Tx");
+    __log_info_err("Expanding %s%s pool with buf_size of %d and count of buffers=%d which amounts to %ul",
+                   m_buf_size ? "" : "zcopy ",
+                   m_p_bpool_stat->is_rx ? "Rx" : "Tx",
+                   m_buf_size,  count, size);
 
     if (size && m_buf_size) {
         data_ptr = (uint8_t *)m_allocator_data.alloc(size);
@@ -122,6 +124,9 @@ bool buffer_pool::expand(size_t count)
     for (size_t i = 0; i < count; ++i) {
         pbuf_type type = (m_buf_size == 0 && m_p_bpool_stat->is_tx) ? PBUF_ZEROCOPY : PBUF_RAM;
         desc = new (desc_ptr) mem_buf_desc_t(data_ptr, m_buf_size, type);
+        __log_info_info("Allocated mem buf desc %d of size %d with data address at %p",
+                       i, desc->sz_buffer, (void *)data_ptr);
+        
         put_buffer_helper(desc);
         desc_ptr += sizeof(mem_buf_desc_t);
         if (data_ptr) {
@@ -171,12 +176,18 @@ buffer_pool::buffer_pool(buffer_pool_type type, size_t buf_size, alloc_t alloc_f
         m_compensation_level =
             buf_size ? safe_mce_sys().rx_num_wr : safe_mce_sys().strq_strides_compensation_level;
         initial_pool_size = m_compensation_level * 2;
+      if(buf_size)
+        __log_info_info("Buf size is 0 RX POOL initial pool size=%d x2 of RX_WRE=%ul", initial_pool_size, safe_mce_sys().rx_num_wr);
+      else
+        __log_info_info("buf size not 0 RX POOL initial pool size=%d x2 of strq_strides_compensation_level=%ul", initial_pool_size, safe_mce_sys().strq_strides_compensation_level);
     } else {
         // Allow to create 1024 connections with a batch.
         m_compensation_level = safe_mce_sys().tx_bufs_batch_tcp * 1024;
         initial_pool_size = buf_size ? m_compensation_level : 0;
+      // __log_info_info("TX POOL initial pool size x1024 of m_compensation_level=%ul, bufsize=%ul, init_poll_size=%ul", m_compensation_level, buf_size, initial_pool_size);
     }
 
+    // __log_info_info("Buffer pool with comp_level=%ul, bufsize=%ul, init_poll_size=%ul", m_compensation_level, buf_size, initial_pool_size);
     if (initial_pool_size) {
         if (!expand(initial_pool_size)) {
             vlog_printf(

@@ -597,6 +597,7 @@ void print_cq_stats(cq_instance_block_t *p_cq_inst_arr)
             printf(FORMAT_STATS_64bit, "Strides received:", p_cq_stats->n_rx_stride_count,
                    post_fix);
             printf(FORMAT_STATS_32bit, "CQE errors:", p_cq_stats->n_rx_cqe_error);
+            printf(FORMAT_STATS_32bit, "Empty RX CQE:", p_cq_stats->n_rx_empty_cq_poll);
             printf(FORMAT_STATS_64bit, "Consumed rwqes:", p_cq_stats->n_rx_consumed_rwqe_count,
                    post_fix);
             printf(FORMAT_STATS_32bit, "Max strides/packet:",
@@ -1119,6 +1120,10 @@ void show_ring_stats(ring_instance_block_t *p_curr_ring_blocks,
 
 void show_cq_stats(cq_instance_block_t *p_curr_cq_blocks, cq_instance_block_t *p_prev_cq_blocks)
 {
+
+    // for(int j=0;j<NUM_OF_SUPPORTED_CQS;j++){
+    //   printf(FORMAT_STATS_s_32bit, " test", p_curr_cq_blocks[j].cq_stats.n_rx_empty_cq_poll);
+    //   printf( " test %d", p_curr_cq_blocks[j].cq_stats.n_rx_empty_cq_poll);}
     switch (user_params.print_details_mode) {
     case e_totals:
         print_cq_stats(p_curr_cq_blocks);
@@ -1488,9 +1493,15 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
     }
 
     if (user_params.csv_stream.is_open()) {
-        user_params.csv_stream << "Date,Time," << ring_packets.hdr_val << socket_counters.hdr_val
-                               << tls_counters.hdr_val << global_counters.hdr_val
-                               << cpu_usage.hdr_val << "\n";
+        user_params.csv_stream <<"Date,Time,"
+                               << ring_packets.hdr_val 
+                               // << socket_counters.hdr_val
+                               // << tls_counters.hdr_val 
+                               // << global_counters.hdr_val
+                               // << cpu_usage.hdr_val 
+                               << "empty_cqe_polls" 
+                               << ",no_bufs" 
+                               << std::endl;
     }
     set_signal_action();
 
@@ -1520,10 +1531,16 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
             char buf[64] = "N/A,N/A,";
             time_t t = time(nullptr);
             strftime(buf, sizeof(buf), "%F,%T,", localtime(&t));
-            user_params.csv_stream
-                << buf << ring_packets.update(p_sh_mem) << socket_counters.update(p_sh_mem)
-                << tls_counters.update(p_sh_mem) << global_counters.update(p_sh_mem)
-                << cpu_usage.update() << "\n";
+            user_params.csv_stream 
+                                  << buf
+                                  << ring_packets.update(p_sh_mem) 
+                                  // << socket_counters.update(p_sh_mem)
+                                  // << tls_counters.update(p_sh_mem) 
+                                  // << global_counters.update(p_sh_mem)
+                                  // << cpu_usage.update()  
+                                  << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_empty_cq_poll <<"," 
+                                  << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_no_bufs <<"," 
+                                  <<std::endl;
         }
 
         switch (user_params.view_mode) {

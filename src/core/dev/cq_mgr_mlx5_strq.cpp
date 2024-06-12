@@ -47,6 +47,7 @@
 #define cq_logfunc    __log_info_func
 #define cq_logdbg     __log_info_dbg
 #define cq_logerr     __log_info_err
+#define cq_loginfo    __log_info_info
 #define cq_logpanic   __log_info_panic
 #define cq_logfuncall __log_info_funcall
 #define cq_logdbg_no_funcname(log_fmt, log_args...)                                                \
@@ -189,10 +190,20 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
     }
 
     xlio_mlx5_cqe *cqe = check_cqe();
+
     if (likely(cqe)) {
         /* Update the consumer index */
         ++m_mlx5_cq.cq_ci;
         rmb();
+        // cq_loginfo("previous db_rec:%ud new db_rec:%ud, diff:%ud, m_mlx5_cq cq_ci:%ud cq_num:%ud, cqe_count:%ud, cqe_size:%ud",
+        //            *m_mlx5_cq.dbrec, 
+        //            htonl(m_mlx5_cq.cq_ci & 0xffffff),
+        //            htonl(m_mlx5_cq.cq_ci & 0xffffff) - (*m_mlx5_cq.dbrec),
+        //            m_mlx5_cq.cq_ci,
+        //            m_mlx5_cq.cq_num,
+        //            m_mlx5_cq.cqe_count,
+        //            m_mlx5_cq.cqe_size
+        //            );
         *m_mlx5_cq.dbrec = htonl(m_mlx5_cq.cq_ci & 0xffffff);
 
         bool is_filler = false;
@@ -220,6 +231,7 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
         }
     } else {
         prefetch((void *)_hot_buffer_stride);
+        m_p_cq_stat->n_rx_empty_cq_poll++;
     }
 
     prefetch((uint8_t *)m_mlx5_cq.cq_buf +
@@ -486,10 +498,12 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
         mem_buf_desc_t *buff_wqe = poll(status, buff);
 
         if (buff_wqe && (++m_qp_rec.debt >= (int)m_n_sysvar_rx_num_wr_to_post_recv)) {
+            cq_loginfo("poll and process buff_weq size %d", buff_wqe->sz_data);
             compensate_qp_poll_failed(); // Reuse this method as success.
         }
 
         if (buff) {
+            cq_loginfo("poll and process buff size %d", buff->sz_data);
             ++ret;
             if (cqe_process_rx(buff, status)) {
                 ++ret_rx_processed;

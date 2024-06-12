@@ -130,6 +130,8 @@ bool qp_mgr_eth_mlx5_dpcp::prepare_rq(uint32_t cqn)
         dpcp::striding_rq *new_rq_ptr = nullptr;
         rc = dpcp_adapter->create_striding_rq(rqattrs, new_rq_ptr);
         new_rq.reset(new_rq_ptr);
+        qp_loginfo("Created striding dpcp rq of params :buf_stride_sz %d, buf_stride_num %d, wqe_num: %d, wqe_sz: %d" PRIu32,
+                  rqattrs.buf_stride_sz, rqattrs.buf_stride_num, rqattrs.wqe_num, rqattrs.wqe_sz);
     } else {
         dpcp::regular_rq *new_rq_ptr = nullptr;
         rc = dpcp_adapter->create_regular_rq(rqattrs, new_rq_ptr);
@@ -307,6 +309,7 @@ void qp_mgr_eth_mlx5_dpcp::post_recv_buffer(mem_buf_desc_t *p_mem_buf_desc)
     m_ibv_rx_sg_array[index].length = p_mem_buf_desc->sz_buffer;
     m_ibv_rx_sg_array[index].lkey = p_mem_buf_desc->lkey;
 
+    qp_loginfo("Posted recv buffer index: %d" PRIu32, index);
     post_recv_buffer_rq(p_mem_buf_desc);
 }
 

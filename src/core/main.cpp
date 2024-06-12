@@ -984,16 +984,21 @@ static size_t calc_rx_wqe_buff_size()
         size_t min_puff_size = g_p_net_device_table_mgr->get_max_mtu() + ETH_VLAN_HDR_LEN;
         buff_size = safe_mce_sys().strq_stride_num_per_rwqe * safe_mce_sys().strq_stride_size_bytes;
         if (buff_size < min_puff_size) {
-            vlog_printf(VLOG_INFO,
+            vlog_printf(VLOG_ERROR,
                         "The requested " SYS_VAR_STRQ_NUM_STRIDES "(%" PRIu32
                         ") * " SYS_VAR_STRQ_STRIDE_SIZE_BYTES "(%" PRIu32 ") = %zu "
                         "is less then MTU + Headers (%zu)",
                         safe_mce_sys().strq_stride_num_per_rwqe,
                         safe_mce_sys().strq_stride_size_bytes, buff_size, min_puff_size);
 
-            buff_size = g_p_net_device_table_mgr->get_max_mtu() + ETH_VLAN_HDR_LEN;
+            buff_size = min_puff_size;
         }
     }
+
+    vlog_printf(VLOG_ERROR,
+                "calculated rx wqe buff size = %u based on srtq stride num per rwqe and stride size bytes %u %u \n",
+                buff_size, safe_mce_sys().strq_stride_num_per_rwqe,
+                        safe_mce_sys().strq_stride_size_bytes);
 
     return buff_size;
 }

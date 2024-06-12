@@ -78,7 +78,7 @@ xlio_allocator::~xlio_allocator()
 
 void *xlio_allocator::alloc(size_t size)
 {
-    __log_info_dbg("Allocating %zu bytes", size);
+    __log_info_info("Allocating %zu bytes", size);
 
     if (m_data) {
         return nullptr;
@@ -487,6 +487,8 @@ bool xlio_heap::expand(size_t size /*=0*/)
         block = new xlio_allocator_hw(m_p_alloc_func, m_p_free_func);
     }
 
+    __log_info_info("xlio heap expand size set to %lu based on heap_metadata_block=%lu mem_limit_us=%lu mem_limit=%lu",
+                    size, safe_mce_sys().heap_metadata_block, safe_mce_sys().memory_limit_user, safe_mce_sys().memory_limit);
     data = block ? block->alloc(size) : nullptr;
     if (m_b_hw && data) {
         if (!block->register_memory(nullptr)) {
@@ -519,6 +521,7 @@ void *xlio_heap::alloc(size_t &size)
 repeat:
     if (actual_size + m_latest_offset <= m_blocks.back()->size()) {
         data = (void *)((uintptr_t)m_blocks.back()->data() + m_latest_offset);
+        __log_info_info("Allocating %zu bytes from block which has size of:%zu at offset:%zu", size, m_blocks.back()->size(), m_latest_offset);
         m_latest_offset += actual_size;
     } else if (!m_b_hw) {
         if (expand(std::max(safe_mce_sys().heap_metadata_block, actual_size))) {

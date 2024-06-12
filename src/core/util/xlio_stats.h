@@ -344,6 +344,7 @@ typedef struct {
     uint32_t n_buffer_pool_len;
     uint32_t n_rx_cqe_error;
     uint16_t n_rx_max_stirde_per_packet;
+    uint32_t n_rx_empty_cq_poll;
 } cq_stats_t;
 
 typedef struct {

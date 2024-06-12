@@ -227,10 +227,10 @@ struct ring_packet_aggregate {
     ring_packet_aggregate(bool is_delta_mode = false)
         : m_is_delta_mode(is_delta_mode) {};
     bool m_is_delta_mode = false;
-    struct pkt_cnt {
-        uint64_t tx = 0, rx = 0;
+    struct cnt {
+        uint64_t pkt_tx = 0, pkt_rx = 0, byte_tx = 0, byte_rx = 0;
     };
-    pkt_cnt curr, prev;
+    cnt curr, prev;
 
     ring_packet_aggregate &update(const sh_mem_t *mem)
     {
@@ -239,19 +239,21 @@ struct ring_packet_aggregate {
 
     ring_packet_aggregate &update(const ring_instance_block_t (&rings)[NUM_OF_SUPPORTED_RINGS])
     {
-        auto count_if_enabled = [](pkt_cnt &val, const ring_instance_block_t &ring_stat) {
+        auto count_if_enabled = [](cnt &val, const ring_instance_block_t &ring_stat) {
             if (ring_stat.b_enabled) {
-                val.tx += ring_stat.ring_stats.n_tx_pkt_count;
-                val.rx += ring_stat.ring_stats.n_rx_pkt_count;
+                val.pkt_tx += ring_stat.ring_stats.n_tx_pkt_count;
+                val.pkt_rx += ring_stat.ring_stats.n_rx_pkt_count;
+                val.byte_tx += ring_stat.ring_stats.n_tx_byte_count;
+                val.byte_rx += ring_stat.ring_stats.n_rx_byte_count;
             }
             return val;
         };
         std::swap(curr, prev);
         curr =
-            std::accumulate(&rings[0], &rings[NUM_OF_SUPPORTED_RINGS], pkt_cnt(), count_if_enabled);
+            std::accumulate(&rings[0], &rings[NUM_OF_SUPPORTED_RINGS], cnt(), count_if_enabled);
         return *this;
     }
-    static const constexpr char *hdr_val = "TX packets,RX packets,";
+    static const constexpr char *hdr_val = "TX packets,RX packets,TX bytes,RX bytes,";
 };
 
 std::ostream &operator<<(std::ostream &os, const tls_context_counters_show &obj)
@@ -271,9 +273,9 @@ std::ostream &operator<<(std::ostream &os, const tls_context_counters_show &obj)
 std::ostream &operator<<(std::ostream &os, const ring_packet_aggregate &obj)
 {
     if (obj.m_is_delta_mode) {
-        os << obj.curr.tx - obj.prev.tx << "," << obj.curr.rx - obj.prev.rx << ",";
+        os << obj.curr.pkt_tx - obj.prev.pkt_tx << "," << obj.curr.pkt_rx - obj.prev.pkt_rx << "," << obj.curr.byte_tx - obj.prev.byte_tx << "," << obj.curr.byte_rx - obj.prev.byte_rx << ",";
     } else {
-        os << obj.curr.tx << "," << obj.curr.rx << ",";
+        os << obj.curr.pkt_tx << "," << obj.curr.pkt_rx << "," << obj.curr.byte_tx << "," << obj.curr.byte_rx << ",";
     }
     return os;
 }

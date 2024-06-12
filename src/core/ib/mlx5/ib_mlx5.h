@@ -105,10 +105,14 @@ typedef struct xlio_ib_mlx5_qp {
 typedef struct xlio_ib_mlx5_cq {
     struct ibv_cq *cq;
     void *cq_buf;
+    // Static
     unsigned cq_num;
+    // Counts received completions
     unsigned cq_ci;
     unsigned cq_sn;
+    // Static
     unsigned cqe_count;
+    // Static - 64
     unsigned cqe_size;
     unsigned cqe_size_log;
     volatile uint32_t *dbrec;

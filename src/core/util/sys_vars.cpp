@@ -639,7 +639,7 @@ void mce_sys_var::read_strq_strides_num()
     }
 
     if (!isOK) {
-        vlog_printf(VLOG_INFO,
+        vlog_printf(VLOG_ERROR,
                     " Invalid " SYS_VAR_STRQ_NUM_STRIDES
                     ": Must be power of 2 and in the range of (%d,%d). Using: %d.\n",
                     STRQ_MIN_STRIDES_NUM, STRQ_MAX_STRIDES_NUM, stirdes_num);
@@ -669,7 +669,7 @@ void mce_sys_var::read_strq_stride_size_bytes()
     }
 
     if (!isOK) {
-        vlog_printf(VLOG_INFO,
+        vlog_printf(VLOG_ERROR,
                     " Invalid " SYS_VAR_STRQ_STRIDE_SIZE_BYTES
                     ": Must be power of 2 and in the range of (%d,%d). Using: %d.\n",
                     STRQ_MIN_STRIDE_SIZE_BYTES, STRQ_MAX_STRIDE_SIZE_BYTES, stirde_size_bytes);
