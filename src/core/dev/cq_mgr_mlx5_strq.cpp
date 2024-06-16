@@ -47,6 +47,7 @@
 #define cq_logfunc    __log_info_func
 #define cq_logdbg     __log_info_dbg
 #define cq_logerr     __log_info_err
+#define cq_logwarn    __log_info_warn
 #define cq_loginfo    __log_info_info
 #define cq_logpanic   __log_info_panic
 #define cq_logfuncall __log_info_funcall
@@ -104,11 +105,12 @@ cq_mgr_mlx5_strq::~cq_mgr_mlx5_strq()
 
 mem_buf_desc_t *cq_mgr_mlx5_strq::next_stride()
 {
+
     if (unlikely(_stride_cache.size() <= 0U)) {
         if (!g_buffer_pool_rx_stride->get_buffers_thread_safe(
                 _stride_cache, _owner_ring, safe_mce_sys().strq_strides_compensation_level, 0U)) {
             // This pool should be an infinite pool
-            __log_info_panic(
+            __log_info_warn(
                 "Unable to retrieve strides from global pool, Free: %zu, Requested: %u",
                 g_buffer_pool_rx_stride->get_free_count(),
                 safe_mce_sys().strq_strides_compensation_level);
@@ -498,7 +500,8 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
         mem_buf_desc_t *buff_wqe = poll(status, buff);
 
         if (buff_wqe && (++m_qp_rec.debt >= (int)m_n_sysvar_rx_num_wr_to_post_recv)) {
-            cq_loginfo("poll and process buff_weq size %d", buff_wqe->sz_data);
+            cq_logwarn("buff_weq size %d but the qp_debt is larger than wr_post_recv which causes compensate_qp_poll_failed",
+                       buff_wqe->sz_data);
             compensate_qp_poll_failed(); // Reuse this method as success.
         }
 

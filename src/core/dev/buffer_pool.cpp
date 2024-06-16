@@ -268,16 +268,15 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
 
     mem_buf_desc_t *head;
 
-    __log_info_funcall("requested %lu, present %lu, created %lu", count, m_n_buffers,
-                       m_n_buffers_created);
-
     if (unlikely(m_n_buffers < count) && !m_b_degraded) {
+        __log_info_warn("requested %lu, present %lu, all-time created %lu so asked expansion of %d because of compensation level ", count, m_n_buffers, m_n_buffers_created, m_compensation_level);
         bool result = expand(std::max<size_t>(m_compensation_level, count));
+        __log_info_warn("expansion was %s", result ? "succesful" : "failed");
         m_b_degraded = !result;
         m_p_bpool_stat->n_buffer_pool_expands += !!result;
     }
     if (unlikely(m_n_buffers < count)) {
-        __log_info_dbg("ERROR! not enough buffers in the pool (requested: %zu, "
+        __log_info_info("ERROR! not enough buffers in the pool (requested: %zu, "
                        "have: %zu, created: %zu, Buffer pool type: %s)",
                        count, m_n_buffers, m_n_buffers_created,
                        m_p_bpool_stat->is_rx ? "Rx" : "Tx");

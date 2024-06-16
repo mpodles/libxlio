@@ -809,11 +809,13 @@ void event_handler_manager::query_for_ibverbs_event(int async_fd)
 
 void event_handler_manager::statistics_print(dump_type_t dump_type, int fd, vlog_levels_t log_level)
 {
+    evh_logerr("Trying to dump stats");
     if (m_b_continue_running) {
         switch (dump_type) {
         case DUMP_FD:
             if (g_p_fd_collection) {
                 g_p_fd_collection->statistics_print(fd, log_level);
+                evh_logerr("Dumped fd stats");
             }
             break;
         case DUMP_ROUTE:

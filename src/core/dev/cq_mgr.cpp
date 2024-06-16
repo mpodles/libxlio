@@ -163,7 +163,7 @@ void cq_mgr::configure(int cq_size)
         cq_logdbg("RX CSUM support = %d", m_b_is_rx_hw_csum_on);
     }
 
-    cq_loginfo("Created CQ as %s with fd[%d] and of size %d elements (ibv_cq_hndl=%p)",
+    cq_logerr("Created CQ as %s with fd[%d] and of size %d elements (ibv_cq_hndl=%p)",
               (m_b_is_rx ? "Rx" : "Tx"), get_channel_fd(), cq_size, m_p_ibv_cq);
 }
 
@@ -352,7 +352,7 @@ bool cq_mgr::request_more_buffers()
     bool res = g_buffer_pool_rx_rwqe->get_buffers_thread_safe(
         m_rx_pool, m_p_ring, m_n_sysvar_qp_compensation_level, m_rx_lkey);
     if (!res) {
-        cq_logfunc("Out of mem_buf_desc from RX free pool for internal object pool");
+        cq_logfuncall("Out of mem_buf_desc from RX free pool for internal object pool");
         return false;
     };
 

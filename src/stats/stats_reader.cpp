@@ -1500,6 +1500,7 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
                                // << global_counters.hdr_val
                                // << cpu_usage.hdr_val 
                                << "empty_cqe_polls" 
+                               << ",buffer_pool_size" 
                                << ",no_bufs" 
                                << std::endl;
     }
@@ -1533,14 +1534,18 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
             strftime(buf, sizeof(buf), "%F,%T,", localtime(&t));
             user_params.csv_stream 
                                   << buf
-                                  << ring_packets.update(p_sh_mem) 
+                                  << ring_packets.update(p_sh_mem);
                                   // << socket_counters.update(p_sh_mem)
                                   // << tls_counters.update(p_sh_mem) 
                                   // << global_counters.update(p_sh_mem)
-                                  // << cpu_usage.update()  
-                                  << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_empty_cq_poll <<"," 
-                                  << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_no_bufs <<"," 
-                                  <<std::endl;
+                                  // << cpu_usage.update()
+                                  // << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_empty_cq_poll << "," 
+                                  // << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_size << "," 
+                                  // << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_no_bufs << "," 
+                                  // << std::endl;
+          for(int queue = 0; queue < NUM_OF_SUPPORTED_CQS; ++queue)
+            user_params.csv_stream << p_sh_mem->cq_inst_arr[queue].cq_stats.n_rx_empty_cq_poll << ",";
+          user_params.csv_stream << std::endl;
         }
 
         switch (user_params.view_mode) {

@@ -444,6 +444,7 @@ int cq_mgr_mlx5::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *pv_fd
     if (likely(ret > 0)) {
         ret_rx_processed += ret;
         m_n_wce_counter += ret;
+        m_p_cq_stat->n_rx_amount_of_buff_poll += ret;
         m_p_ring->m_gro_mgr.flush_all(pv_fd_ready_array);
     } else {
         compensate_qp_poll_failed();
