@@ -124,7 +124,7 @@ bool buffer_pool::expand(size_t count)
     for (size_t i = 0; i < count; ++i) {
         pbuf_type type = (m_buf_size == 0 && m_p_bpool_stat->is_tx) ? PBUF_ZEROCOPY : PBUF_RAM;
         desc = new (desc_ptr) mem_buf_desc_t(data_ptr, m_buf_size, type);
-        __log_info_info("Allocated mem buf desc %d of size %d with data address at %p",
+        __log_info_dbg("Allocated mem buf desc %d of size %d with data address at %p",
                        i, desc->sz_buffer, (void *)data_ptr);
         
         put_buffer_helper(desc);
@@ -276,7 +276,7 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
         m_p_bpool_stat->n_buffer_pool_expands += !!result;
     }
     if (unlikely(m_n_buffers < count)) {
-        __log_info_info("ERROR! not enough buffers in the pool (requested: %zu, "
+        __log_info_err("ERROR! not enough buffers in the pool (requested: %zu, "
                        "have: %zu, created: %zu, Buffer pool type: %s)",
                        count, m_n_buffers, m_n_buffers_created,
                        m_p_bpool_stat->is_rx ? "Rx" : "Tx");
@@ -285,6 +285,7 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
     }
 
     // pop buffers from the list
+    __log_info_warn("%s %s requested %lu, present %lu, all-time created %lu", m_p_bpool_stat->is_rx ? "Rx" : "Tx", m_buf_size ? "" : "ZC", count, m_n_buffers, m_n_buffers_created);
     m_n_buffers -= count;
     m_p_bpool_stat->n_buffer_pool_size -= count;
     while (count-- > 0) {

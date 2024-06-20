@@ -436,12 +436,12 @@ void update_delta_cq_stat(cq_stats_t *p_curr_cq_stats, cq_stats_t *p_prev_cq_sta
             (p_curr_cq_stats->n_rx_lro_packets - p_prev_cq_stats->n_rx_lro_packets) / delay;
         p_prev_cq_stats->n_rx_lro_bytes =
             (p_curr_cq_stats->n_rx_lro_bytes - p_prev_cq_stats->n_rx_lro_bytes) / delay;
-        p_prev_cq_stats->n_rx_gro_packets =
-            (p_curr_cq_stats->n_rx_gro_packets - p_prev_cq_stats->n_rx_gro_packets) / delay;
-        p_prev_cq_stats->n_rx_gro_frags =
-            (p_curr_cq_stats->n_rx_gro_frags - p_prev_cq_stats->n_rx_gro_frags) / delay;
-        p_prev_cq_stats->n_rx_gro_bytes =
-            (p_curr_cq_stats->n_rx_gro_bytes - p_prev_cq_stats->n_rx_gro_bytes) / delay;
+        // p_prev_cq_stats->n_rx_gro_packets =
+        //     (p_curr_cq_stats->n_rx_gro_packets - p_prev_cq_stats->n_rx_gro_packets) / delay;
+        // p_prev_cq_stats->n_rx_gro_frags =
+        //     (p_curr_cq_stats->n_rx_gro_frags - p_prev_cq_stats->n_rx_gro_frags) / delay;
+        // p_prev_cq_stats->n_rx_gro_bytes =
+        //     (p_curr_cq_stats->n_rx_gro_bytes - p_prev_cq_stats->n_rx_gro_bytes) / delay;
         p_prev_cq_stats->n_rx_consumed_rwqe_count = (p_curr_cq_stats->n_rx_consumed_rwqe_count -
                                                      p_prev_cq_stats->n_rx_consumed_rwqe_count) /
             delay;
@@ -597,7 +597,7 @@ void print_cq_stats(cq_instance_block_t *p_cq_inst_arr)
             printf(FORMAT_STATS_64bit, "Strides received:", p_cq_stats->n_rx_stride_count,
                    post_fix);
             printf(FORMAT_STATS_32bit, "CQE errors:", p_cq_stats->n_rx_cqe_error);
-            printf(FORMAT_STATS_32bit, "Empty RX CQE:", p_cq_stats->n_rx_empty_cq_poll);
+            // printf(FORMAT_STATS_32bit, "Empty RX CQE:", p_cq_stats->n_rx_empty_cq_poll);
             printf(FORMAT_STATS_64bit, "Consumed rwqes:", p_cq_stats->n_rx_consumed_rwqe_count,
                    post_fix);
             printf(FORMAT_STATS_32bit, "Max strides/packet:",
@@ -613,16 +613,16 @@ void print_cq_stats(cq_instance_block_t *p_cq_inst_arr)
                        "Rx lro:", p_cq_stats->n_rx_lro_bytes / BYTES_TRAFFIC_UNIT,
                        p_cq_stats->n_rx_lro_packets, post_fix);
             }
-            if (p_cq_stats->n_rx_gro_packets) {
-                printf(FORMAT_RING_PACKETS,
-                       "Rx GRO:", p_cq_stats->n_rx_gro_bytes / BYTES_TRAFFIC_UNIT,
-                       p_cq_stats->n_rx_gro_packets, post_fix);
-                printf(FORMAT_STATS_64bit, "Avg GRO packet size:",
-                       p_cq_stats->n_rx_gro_bytes / p_cq_stats->n_rx_gro_packets, post_fix);
-                printf(
-                    FORMAT_STATS_double, "GRO frags per packet:",
-                    static_cast<double>(p_cq_stats->n_rx_gro_frags) / p_cq_stats->n_rx_gro_packets);
-            }
+            // if (p_cq_stats->n_rx_gro_packets) {
+            //     printf(FORMAT_RING_PACKETS,
+            //            "Rx GRO:", p_cq_stats->n_rx_gro_bytes / BYTES_TRAFFIC_UNIT,
+            //            p_cq_stats->n_rx_gro_packets, post_fix);
+            //     printf(FORMAT_STATS_64bit, "Avg GRO packet size:",
+            //            p_cq_stats->n_rx_gro_bytes / p_cq_stats->n_rx_gro_packets, post_fix);
+            //     printf(
+            //         FORMAT_STATS_double, "GRO frags per packet:",
+            //         static_cast<double>(p_cq_stats->n_rx_gro_frags) / p_cq_stats->n_rx_gro_packets);
+            // }
         }
     }
     printf("======================================================\n");
@@ -1120,10 +1120,6 @@ void show_ring_stats(ring_instance_block_t *p_curr_ring_blocks,
 
 void show_cq_stats(cq_instance_block_t *p_curr_cq_blocks, cq_instance_block_t *p_prev_cq_blocks)
 {
-
-    // for(int j=0;j<NUM_OF_SUPPORTED_CQS;j++){
-    //   printf(FORMAT_STATS_s_32bit, " test", p_curr_cq_blocks[j].cq_stats.n_rx_empty_cq_poll);
-    //   printf( " test %d", p_curr_cq_blocks[j].cq_stats.n_rx_empty_cq_poll);}
     switch (user_params.print_details_mode) {
     case e_totals:
         print_cq_stats(p_curr_cq_blocks);
@@ -1499,7 +1495,9 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
                                // << tls_counters.hdr_val 
                                // << global_counters.hdr_val
                                // << cpu_usage.hdr_val 
-                               << "empty_cqe_polls" 
+                               << "rx_polls" 
+                               << ",rx_polls_with_ret" 
+                               << ",non_complete_rwqe" 
                                << ",buffer_pool_size" 
                                << ",no_bufs" 
                                << std::endl;
@@ -1534,18 +1532,20 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
             strftime(buf, sizeof(buf), "%F,%T,", localtime(&t));
             user_params.csv_stream 
                                   << buf
-                                  << ring_packets.update(p_sh_mem);
+                                  << ring_packets.update(p_sh_mem)
                                   // << socket_counters.update(p_sh_mem)
                                   // << tls_counters.update(p_sh_mem) 
                                   // << global_counters.update(p_sh_mem)
                                   // << cpu_usage.update()
-                                  // << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_empty_cq_poll << "," 
-                                  // << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_size << "," 
-                                  // << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_no_bufs << "," 
-                                  // << std::endl;
-          for(int queue = 0; queue < NUM_OF_SUPPORTED_CQS; ++queue)
-            user_params.csv_stream << p_sh_mem->cq_inst_arr[queue].cq_stats.n_rx_empty_cq_poll << ",";
-          user_params.csv_stream << std::endl;
+                                  << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_polls << "," 
+                                  << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_polls_with_ret << "," 
+                                  << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_non_complete_rqwe_count << "," 
+                                  << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_size << "," 
+                                  << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_no_bufs << "," 
+                                  << std::endl;
+          // for(int queue = 0; queue < NUM_OF_SUPPORTED_CQS; ++queue)
+          //   user_params.csv_stream << p_sh_mem->cq_inst_arr[queue].cq_stats.n_rx_empty_cq_poll << ",";
+          // user_params.csv_stream << std::endl;
         }
 
         switch (user_params.view_mode) {

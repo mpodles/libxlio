@@ -183,7 +183,7 @@ int xlio_ib_mlx5_post_recv(xlio_ib_mlx5_qp_t *mlx5_qp, struct ibv_recv_wr *wr,
                                             (ind << mlx5_qp->rq.wqe_shift));
 
         for (i = 0, j = 0; i < wr->num_sge; ++i) {
-            __log_info("Num posted WR %d, num of sge %d with it's size %d and address of %p",
+            __log_details("Num posted WR %d, num of sge %d with it's size %d and address of %p",
                        nreq, i, wr->sg_list[i].length, (void *)wr->sg_list[i].addr);
             if (unlikely(!wr->sg_list[i].length)) {
                 continue;

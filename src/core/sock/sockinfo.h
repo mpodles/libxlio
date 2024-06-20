@@ -407,6 +407,7 @@ protected:
                         nbytes = bytes_left;
                     }
                     memcpy((char *)(p_iov[i].iov_base) + pos, iov_base, nbytes);
+                    // memset((char *)(p_iov[i].iov_base) + pos, 0, nbytes );
                     pos += nbytes;
                     total_rx += nbytes;
                     m_rx_pkt_ready_offset += nbytes;

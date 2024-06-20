@@ -163,7 +163,7 @@ void cq_mgr::configure(int cq_size)
         cq_logdbg("RX CSUM support = %d", m_b_is_rx_hw_csum_on);
     }
 
-    cq_logerr("Created CQ as %s with fd[%d] and of size %d elements (ibv_cq_hndl=%p)",
+    cq_loginfo("Created CQ as %s with fd[%d] and of size %d elements (ibv_cq_hndl=%p)",
               (m_b_is_rx ? "Rx" : "Tx"), get_channel_fd(), cq_size, m_p_ibv_cq);
 }
 
@@ -344,7 +344,7 @@ void cq_mgr::del_qp_tx(qp_mgr *qp)
 
 bool cq_mgr::request_more_buffers()
 {
-    cq_logfuncall("Allocating additional %d buffers for internal use",
+    cq_logwarn("Allocating additional %d buffers for internal use",
                   m_n_sysvar_qp_compensation_level);
 
     // Assume locked!

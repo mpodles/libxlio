@@ -41,6 +41,8 @@
 #include "qp_mgr_eth_mlx5.h"
 #include "ring_simple.h"
 #include <cinttypes>
+#include <algorithm> // For min max
+#include <set>
 
 #define MODULE_NAME "cq_mgr_mlx5_strq"
 
@@ -57,6 +59,10 @@
             vlog_printf(VLOG_DEBUG, MODULE_NAME "[%p]:%d: " log_fmt "\n", __INFO__, __LINE__,      \
                         ##log_args);                                                               \
     } while (0)
+
+// static std::set<void*> _unique_buffers;
+// static void* _min_buffer = (void*)0xFFFFFFFFFFFFFFFF;
+// static void* _max_buffer = NULL;
 
 cq_mgr_mlx5_strq::cq_mgr_mlx5_strq(ring_simple *p_ring, ib_ctx_handler *p_ib_ctx_handler,
                                    uint32_t cq_size, uint32_t stride_size_bytes,
@@ -186,6 +192,10 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
 
     if (likely(!_hot_buffer_stride)) {
         _hot_buffer_stride = next_stride();
+        // _unique_buffers.insert(_hot_buffer_stride);
+        // if(_hot_buffer_stride->p_buffer)
+        //   _min_buffer = std::min((void *)_hot_buffer_stride->p_buffer, _min_buffer);
+        // _max_buffer = std::max((void *)_hot_buffer_stride->p_buffer, _max_buffer);
         prefetch((void *)_hot_buffer_stride);
         prefetch((uint8_t *)m_mlx5_cq.cq_buf +
                  ((m_mlx5_cq.cq_ci & (m_mlx5_cq.cqe_count - 1)) << m_mlx5_cq.cqe_size_log));
@@ -218,9 +228,15 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
             if (likely(status == BS_OK)) {
                 ++m_p_cq_stat->n_rx_consumed_rwqe_count;
             }
+          cq_logwarn("wqe COMPLETED");
+        }
+        else {
+          ++m_p_cq_stat->n_rx_non_complete_rqwe_count;
+          cq_logwarn("wqe NOT completed");
         }
 
         if (likely(!is_filler)) {
+            cq_logwarn("wqe is NOT FILLER");
             ++m_p_cq_stat->n_rx_packet_count;
             m_p_cq_stat->n_rx_stride_count += _hot_buffer_stride->rx.strides_num;
             m_p_cq_stat->n_rx_max_stirde_per_packet = std::max(
@@ -228,12 +244,18 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
             buff_stride = _hot_buffer_stride;
             _hot_buffer_stride = nullptr;
         } else if (status != BS_CQE_INVALID) {
+            cq_logwarn("wqe IS FILLER");
             reclaim_recv_buffer_helper(_hot_buffer_stride);
             _hot_buffer_stride = nullptr;
         }
     } else {
         prefetch((void *)_hot_buffer_stride);
-        m_p_cq_stat->n_rx_empty_cq_poll++;
+        // m_p_cq_stat->n_rx_empty_cq_poll++;
+        // cq_logwarn("uniqe_buffers:%ud min:%p max:%p",
+        //            _unique_buffers.size(),
+        //            _min_buffer,
+        //            _max_buffer
+        //            );
     }
 
     prefetch((uint8_t *)m_mlx5_cq.cq_buf +
@@ -334,10 +356,15 @@ inline bool cq_mgr_mlx5_strq::strq_cqe_to_mem_buff_desc(struct xlio_mlx5_cqe *cq
     }
     }
 
-    cq_logfunc("STRQ CQE. Status: %d, WQE-ID: %hu, Is-Filler: %" PRIu32 ", Orig-HBC: %" PRIu32
-               ", Data-Size: %" PRIu32 ", Strides: %hu, Consumed-Bytes: %" PRIu32
-               ", RX-HB: %p, RX-HB-SZ: %zu\n",
-               static_cast<int>(status), cqe->wqe_id, (host_byte_cnt >> 31), cqe->byte_cnt,
+    // cq_logwarn("STRQ CQE. Op_own: %d, Status: %d, WQE-ID: %hu, Is-Filler: %" PRIu32 ", Orig-HBC: %" PRIu32
+    //            ", Data-Size: %" PRIu32 ", Strides: %hu, Consumed-Bytes: %" PRIu32
+    //            ", RX-HB: %p, RX-HB-SZ: %zu",
+    //            MLX5_CQE_OPCODE(cqe->op_own), static_cast<int>(status), cqe->wqe_id, (host_byte_cnt >> 31), cqe->byte_cnt,
+    //            (host_byte_cnt & 0x0000FFFFU), _hot_buffer_stride->rx.strides_num,
+    //            _current_wqe_consumed_bytes, m_rx_hot_buffer, m_rx_hot_buffer->sz_buffer);
+
+    cq_logwarn("STRQ CQE: bytes in CQE: %" PRIu32 ", hot_buffer_stride.strides: %hu, Consumed-Bytes: %" PRIu32
+               ", m_rx_hot_buffer: %p, its_size: %zu",
                (host_byte_cnt & 0x0000FFFFU), _hot_buffer_stride->rx.strides_num,
                _current_wqe_consumed_bytes, m_rx_hot_buffer, m_rx_hot_buffer->sz_buffer);
     // vlog_print_buffer(VLOG_FINE, "STRQ CQE. Data: ", "\n",
@@ -500,14 +527,14 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
         mem_buf_desc_t *buff_wqe = poll(status, buff);
 
         if (buff_wqe && (++m_qp_rec.debt >= (int)m_n_sysvar_rx_num_wr_to_post_recv)) {
-            cq_logwarn("buff_weq size %d but the qp_debt is larger than wr_post_recv which causes compensate_qp_poll_failed",
-                       buff_wqe->sz_data);
+            cq_logwarn("buff_weq there but DEBT: %d > %d WRE_BATCH",
+                       m_qp_rec.debt, (int)m_n_sysvar_rx_num_wr_to_post_recv);
             compensate_qp_poll_failed(); // Reuse this method as success.
         }
 
         if (buff) {
-            cq_loginfo("poll and process buff size %d", buff->sz_data);
             ++ret;
+            cq_logwarn("poll and process buff size %d, ret: %d", buff->sz_data, ret);
             if (cqe_process_rx(buff, status)) {
                 ++ret_rx_processed;
                 process_recv_buffer(buff, pv_fd_ready_array);
@@ -518,14 +545,17 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
         }
     }
 
+    cq_logwarn("finished cq_polling with %d buff_stride in poll() set\n", ret);
     update_global_sn(*p_cq_poll_sn, ret);
 
     if (likely(ret > 0)) {
         m_n_wce_counter += ret; // Actually strides count.
+        m_p_cq_stat->n_rx_polls_with_ret++;
         m_p_ring->m_gro_mgr.flush_all(pv_fd_ready_array);
     } else {
         compensate_qp_poll_failed();
     }
+    m_p_cq_stat->n_rx_polls++;
 
     return ret_rx_processed;
 }
