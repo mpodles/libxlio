@@ -1497,9 +1497,13 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
                                // << cpu_usage.hdr_val 
                                << "rx_polls" 
                                << ",rx_polls_with_ret" 
-                               << ",non_complete_rwqe" 
-                               << ",buffer_pool_size" 
-                               << ",no_bufs" 
+                               << ",time_in_poll_and_process" 
+                               << ",time_in_tcp_input" 
+                               << ",empty_cq_poll" 
+                               // << ",m_rx_pool_len" 
+                               // << ",m_rx_queue_len" 
+                               // << ",buffer_pool_size" 
+                               // << ",no_bufs" 
                                << std::endl;
     }
     set_signal_action();
@@ -1539,10 +1543,15 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
                                   // << cpu_usage.update()
                                   << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_polls << "," 
                                   << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_polls_with_ret << "," 
-                                  << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_non_complete_rqwe_count << "," 
-                                  << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_size << "," 
-                                  << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_no_bufs << "," 
+                                  << p_sh_mem->cq_inst_arr[0].cq_stats.poll_and_process_time << "," 
+                                  << p_sh_mem->skt_inst_arr[1].skt_stats.tcp_input_time << "," 
+                                  << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_empty_cq_poll << "," 
+                                  // << p_sh_mem->cq_inst_arr[0].cq_stats.n_buffer_pool_len << "," 
+                                  // << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_sw_queue_len << "," 
+                                  // << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_size << "," 
+                                  // << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_no_bufs << "," 
                                   << std::endl;
+
           // for(int queue = 0; queue < NUM_OF_SUPPORTED_CQS; ++queue)
           //   user_params.csv_stream << p_sh_mem->cq_inst_arr[queue].cq_stats.n_rx_empty_cq_poll << ",";
           // user_params.csv_stream << std::endl;
@@ -1572,6 +1581,11 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
                 show_ring_stats(p_sh_mem->ring_inst_arr, NULL);
                 show_bpool_stats(p_sh_mem->bpool_inst_arr, NULL);
                 show_global_stats(p_sh_mem->global_inst_arr, NULL);
+                for(size_t i=0; i < p_sh_mem->max_skt_inst_num; ++i)
+                  if(p_sh_mem->skt_inst_arr[i].skt_stats.tcp_input_time != 0 )
+                    std::cout<<"Input time: "<<p_sh_mem->skt_inst_arr[i].skt_stats.tcp_input_time<<" ,fd:"<<p_sh_mem->skt_inst_arr[i].skt_stats.fd
+                    <<"i: "<<i<<" max size "<<p_sh_mem->max_skt_inst_num
+                    <<std::endl;
             }
             break;
         case e_deltas:

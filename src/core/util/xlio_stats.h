@@ -246,6 +246,7 @@ typedef struct socket_stats_t {
     uint32_t n_rx_ready_pkt_count;
     uint32_t n_rx_ready_byte_limit;
     uint64_t n_rx_ready_byte_count;
+    uint64_t tcp_input_time;
     uint64_t n_tx_ready_byte_count;
     uint32_t n_rx_zcopy_pkt_count;
     socket_counters_t counters;
@@ -336,19 +337,18 @@ typedef struct {
     uint64_t n_rx_pkt_drop;
     uint64_t n_rx_lro_packets;
     uint64_t n_rx_lro_bytes;
-    // uint64_t n_rx_gro_packets;
-    // uint64_t n_rx_gro_bytes;
-    // uint64_t n_rx_gro_frags;
+    uint64_t n_rx_gro_packets;
+    uint64_t n_rx_gro_bytes;
+    uint64_t n_rx_gro_frags;
     uint64_t n_rx_polls;
     uint64_t n_rx_polls_with_ret;
-    uint64_t n_rx_non_complete_rqwe_count;
+    uint64_t poll_and_process_time;
     uint32_t n_rx_sw_queue_len;
     uint32_t n_rx_drained_at_once_max;
     uint32_t n_buffer_pool_len;
     uint32_t n_rx_cqe_error;
     uint16_t n_rx_max_stirde_per_packet;
-    // uint32_t n_rx_polls;
-    // uint32_t n_rx_empty_cq_poll;
+    uint32_t n_rx_empty_cq_poll;
 } cq_stats_t;
 
 typedef struct {

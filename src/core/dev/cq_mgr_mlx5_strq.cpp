@@ -60,7 +60,7 @@
                         ##log_args);                                                               \
     } while (0)
 
-// static std::set<void*> _unique_buffers;
+static std::set<void*> _unique_buffers;
 // static void* _min_buffer = (void*)0xFFFFFFFFFFFFFFFF;
 // static void* _max_buffer = NULL;
 
@@ -188,11 +188,11 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
         if (!set_current_hot_buffer()) {
             return NULL;
         }
+        _unique_buffers.insert(m_rx_hot_buffer->p_buffer);
     }
 
     if (likely(!_hot_buffer_stride)) {
         _hot_buffer_stride = next_stride();
-        // _unique_buffers.insert(_hot_buffer_stride);
         // if(_hot_buffer_stride->p_buffer)
         //   _min_buffer = std::min((void *)_hot_buffer_stride->p_buffer, _min_buffer);
         // _max_buffer = std::max((void *)_hot_buffer_stride->p_buffer, _max_buffer);
@@ -231,7 +231,7 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
           cq_logwarn("wqe COMPLETED");
         }
         else {
-          ++m_p_cq_stat->n_rx_non_complete_rqwe_count;
+          // ++m_p_cq_stat->n_rx_non_complete_rqwe_count;
           cq_logwarn("wqe NOT completed");
         }
 
@@ -250,12 +250,12 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
         }
     } else {
         prefetch((void *)_hot_buffer_stride);
-        // m_p_cq_stat->n_rx_empty_cq_poll++;
-        // cq_logwarn("uniqe_buffers:%ud min:%p max:%p",
-        //            _unique_buffers.size(),
-        //            _min_buffer,
-        //            _max_buffer
-        //            );
+        m_p_cq_stat->n_rx_empty_cq_poll++;
+        cq_logerr("uniqe_buffers: %ud", //%ud min:%p max:%p",
+                   _unique_buffers.size()
+                   // _min_buffer,
+                   // _max_buffer
+                   );
     }
 
     prefetch((uint8_t *)m_mlx5_cq.cq_buf +
@@ -506,6 +506,11 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll_and_process_socketxtreme()
 
 int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *pv_fd_ready_array)
 {
+
+    struct timespec start, end;
+    if (gettime(&start)) {
+        // cq_logerr("start err");
+    }
     /* Assume locked!!! */
     cq_logfuncall("");
 
@@ -556,6 +561,12 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
         compensate_qp_poll_failed();
     }
     m_p_cq_stat->n_rx_polls++;
+
+    if (gettime(&end)) {
+        // cq_logerr("stop err");
+    }
+
+    m_p_cq_stat->poll_and_process_time += TIME_DIFF_in_MICRO(start, end);
 
     return ret_rx_processed;
 }

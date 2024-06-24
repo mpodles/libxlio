@@ -270,6 +270,7 @@ void cq_mgr::add_qp_rx(qp_mgr *qp)
 
     // Initial fill of receiver work requests
     uint32_t qp_rx_wr_num = qp->get_rx_max_wr_num();
+    // uint32_t qp_rx_wr_num = 12;
     cq_logdbg("Trying to push %d WRE to allocated qp (%p)", qp_rx_wr_num, qp);
     while (qp_rx_wr_num) {
         uint32_t n_num_mem_bufs = m_n_sysvar_rx_num_wr_to_post_recv;
@@ -342,15 +343,26 @@ void cq_mgr::del_qp_tx(qp_mgr *qp)
     memset(&m_qp_rec, 0, sizeof(m_qp_rec));
 }
 
+// Limit of buffers to fetch from global pool
+size_t m_buffers_limit = 1300;
+
 bool cq_mgr::request_more_buffers()
 {
-    cq_logwarn("Allocating additional %d buffers for internal use",
-                  m_n_sysvar_qp_compensation_level);
 
+    size_t space_left = m_buffers_limit - m_p_cq_stat->n_buffer_pool_len;
+    size_t buffers_to_expand = std::min<size_t>(space_left, m_n_sysvar_qp_compensation_level);
+    if(buffers_to_expand <= 0) {
+      cq_logerr("Already at buffers limit");
+      return false;
+    }
+    cq_logerr("Allocating additional %d buffers for internal use",
+                  buffers_to_expand);
     // Assume locked!
     // Add an additional free buffer descs to RX cq mgr
     bool res = g_buffer_pool_rx_rwqe->get_buffers_thread_safe(
-        m_rx_pool, m_p_ring, m_n_sysvar_qp_compensation_level, m_rx_lkey);
+        m_rx_pool, m_p_ring, buffers_to_expand, m_rx_lkey);
+    // bool res = g_buffer_pool_rx_rwqe->get_buffers_thread_safe(
+    //     m_rx_pool, m_p_ring, m_n_sysvar_qp_compensation_level, m_rx_lkey);
     if (!res) {
         cq_logfuncall("Out of mem_buf_desc from RX free pool for internal object pool");
         return false;
@@ -564,6 +576,7 @@ void cq_mgr::compensate_qp_poll_failed()
     // Assume locked!!!
     // Compensate QP for all completions debt
     if (m_qp_rec.debt) {
+        cq_logerr("debt: %d, pool_size: %d",m_qp_rec.debt, m_rx_pool.size());
         if (likely(m_rx_pool.size() || request_more_buffers())) {
             size_t buffers = std::min<size_t>(m_qp_rec.debt, m_rx_pool.size());
             m_qp_rec.qp->post_recv_buffers(&m_rx_pool, buffers);

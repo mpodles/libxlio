@@ -2475,7 +2475,18 @@ bool sockinfo_tcp::rx_input_cb(mem_buf_desc_t *p_rx_pkt_mem_buf_desc_info, void 
     }
 
     sock->m_xlio_thr = p_rx_pkt_mem_buf_desc_info->rx.is_xlio_thr;
+
+    struct timespec start, end;
+    if (gettime(&start)) {
+        // cq_logerr("start err");
+    }
+
     L3_level_tcp_input((pbuf *)p_rx_pkt_mem_buf_desc_info, pcb);
+    if (gettime(&end)) {
+        // cq_logerr("stop err");
+    }
+
+    m_socket_stats.tcp_input_time += TIME_DIFF_in_MICRO(start, end);
     sock->m_xlio_thr = false;
 
     if (sock != this) {
