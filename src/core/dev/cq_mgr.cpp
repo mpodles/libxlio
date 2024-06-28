@@ -576,7 +576,7 @@ void cq_mgr::compensate_qp_poll_failed()
     // Assume locked!!!
     // Compensate QP for all completions debt
     if (m_qp_rec.debt) {
-        cq_logerr("debt: %d, pool_size: %d",m_qp_rec.debt, m_rx_pool.size());
+        // cq_logerr("debt: %d, pool_size: %d",m_qp_rec.debt, m_rx_pool.size());
         if (likely(m_rx_pool.size() || request_more_buffers())) {
             size_t buffers = std::min<size_t>(m_qp_rec.debt, m_rx_pool.size());
             m_qp_rec.qp->post_recv_buffers(&m_rx_pool, buffers);

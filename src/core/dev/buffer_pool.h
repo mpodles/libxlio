@@ -47,6 +47,7 @@ class ib_ctx_handler;
 enum buffer_pool_type {
     BUFFER_POOL_RX = 1,
     BUFFER_POOL_TX,
+    BUFFER_POOL_RR,
 };
 
 inline static void free_lwip_pbuf(struct pbuf_custom *pbuf_custom)

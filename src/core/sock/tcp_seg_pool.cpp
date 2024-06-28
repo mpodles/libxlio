@@ -153,6 +153,8 @@ bool tcp_seg_pool::expand()
         m_stats.expands++;
         g_global_stat_static.n_tcp_seg_pool_size += segs_nr;
     }
+
+    __log_err("Allocated TCP Seg Pool of size %d with %d segments", size, segs_nr);
     return true;
 }
 

@@ -1341,6 +1341,10 @@ void mce_sys_var::get_env_params()
         tx_bufs_batch_tcp = (uint32_t)std::max<int32_t>(atoi(env_ptr), 1);
     }
 
+    if ((env_ptr = getenv(SYS_VAR_TX_BUFS_COMPENSATE)) != NULL) {
+        tx_bufs_compensate = (uint32_t)std::max<int32_t>(atoi(env_ptr), 1);
+    }
+
     if ((env_ptr = getenv(SYS_VAR_TX_SEGS_BATCH_TCP)) != NULL) {
         tx_segs_batch_tcp = (uint32_t)std::max<int32_t>(atoi(env_ptr), 1);
     }

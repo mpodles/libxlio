@@ -380,6 +380,7 @@ private:
 
     lock_mutex m_lock_ring_tx_buf_wait;
     uint32_t m_tx_num_bufs;
+    uint32_t m_tx_bufs_compensate;
     uint32_t m_zc_num_bufs;
     uint32_t m_tx_num_wr;
     uint32_t m_missing_buf_ref_count;

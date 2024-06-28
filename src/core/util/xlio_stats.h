@@ -349,6 +349,10 @@ typedef struct {
     uint32_t n_rx_cqe_error;
     uint16_t n_rx_max_stirde_per_packet;
     uint32_t n_rx_empty_cq_poll;
+    uint64_t dummy1;
+    uint64_t dummy2;
+    uint64_t dummy3;
+    uint64_t dummy4;
 } cq_stats_t;
 
 typedef struct {

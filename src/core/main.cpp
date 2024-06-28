@@ -1094,19 +1094,26 @@ static void do_global_ctors_helper()
         get_lwip_tcp_mss(g_p_net_device_table_mgr->get_max_mtu(), safe_mce_sys().lwip_mss)) {
         safe_mce_sys().tx_buf_size = 0;
     }
-    NEW_CTOR(g_buffer_pool_tx,
-             buffer_pool(BUFFER_POOL_TX,
-                         TX_BUF_SIZE(safe_mce_sys().tx_buf_size
-                                         ? safe_mce_sys().tx_buf_size
-                                         : get_lwip_tcp_mss(g_p_net_device_table_mgr->get_max_mtu(),
-                                                            safe_mce_sys().lwip_mss)),
-                         (safe_mce_sys().m_ioctl.user_alloc.flags & IOCTL_USER_ALLOC_TX
-                              ? safe_mce_sys().m_ioctl.user_alloc.memalloc
-                              : NULL),
-                         (safe_mce_sys().m_ioctl.user_alloc.flags & IOCTL_USER_ALLOC_TX
-                              ? safe_mce_sys().m_ioctl.user_alloc.memfree
-                              : NULL)));
+    // Mock request_response parameter
+    if (false) {
+      NEW_CTOR(g_buffer_pool_tx,
+               buffer_pool(BUFFER_POOL_RR, 0));
+      // g_buffer_pool_tx = g_buffer_pool_rx_stride;
 
+    } else {
+      NEW_CTOR(g_buffer_pool_tx,
+               buffer_pool(BUFFER_POOL_TX,
+                           TX_BUF_SIZE(safe_mce_sys().tx_buf_size
+                                           ? safe_mce_sys().tx_buf_size
+                                           : get_lwip_tcp_mss(g_p_net_device_table_mgr->get_max_mtu(),
+                                                              safe_mce_sys().lwip_mss)),
+                           (safe_mce_sys().m_ioctl.user_alloc.flags & IOCTL_USER_ALLOC_TX
+                                ? safe_mce_sys().m_ioctl.user_alloc.memalloc
+                                : NULL),
+                           (safe_mce_sys().m_ioctl.user_alloc.flags & IOCTL_USER_ALLOC_TX
+                                ? safe_mce_sys().m_ioctl.user_alloc.memfree
+                                : NULL)));
+   }
     NEW_CTOR(g_buffer_pool_zc, buffer_pool(BUFFER_POOL_TX, 0));
 
     NEW_CTOR(g_tcp_seg_pool, tcp_seg_pool());

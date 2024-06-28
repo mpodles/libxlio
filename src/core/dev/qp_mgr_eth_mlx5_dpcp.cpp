@@ -61,14 +61,14 @@ bool qp_mgr_eth_mlx5_dpcp::configure_rq_dpcp()
 
     m_qp_cap.max_recv_wr = m_rx_num_wr;
 
-    qp_logdbg("Requested RQ parameters: wre: rx = %d sge: rx = %d", m_qp_cap.max_recv_wr,
+    qp_logerr("Requested RQ parameters: wre: rx = %d sge: rx = %d", m_qp_cap.max_recv_wr,
               m_qp_cap.max_recv_sge);
 
     xlio_ib_mlx5_cq_t mlx5_cq;
     memset(&mlx5_cq, 0, sizeof(mlx5_cq));
     xlio_ib_mlx5_get_cq(m_p_cq_mgr_rx->get_ibv_cq_hndl(), &mlx5_cq);
 
-    qp_logdbg("Configuring dpcp RQ, cq-rx: %p, cqn-rx: %u", m_p_cq_mgr_rx,
+    qp_logerr("Configuring dpcp RQ, cq-rx: %p, cqn-rx: %u", m_p_cq_mgr_rx,
               static_cast<unsigned int>(mlx5_cq.cq_num));
 
     if (safe_mce_sys().enable_striding_rq) {
@@ -130,7 +130,7 @@ bool qp_mgr_eth_mlx5_dpcp::prepare_rq(uint32_t cqn)
         dpcp::striding_rq *new_rq_ptr = nullptr;
         rc = dpcp_adapter->create_striding_rq(rqattrs, new_rq_ptr);
         new_rq.reset(new_rq_ptr);
-        qp_loginfo("Created striding dpcp rq of params :buf_stride_sz %d, buf_stride_num %d, wqe_num: %d, wqe_sz: %d" PRIu32,
+        qp_logerr("Created striding dpcp rq of params :buf_stride_sz %d, buf_stride_num %d, wqe_num: %d, wqe_sz: %d" PRIu32,
                   rqattrs.buf_stride_sz, rqattrs.buf_stride_num, rqattrs.wqe_num, rqattrs.wqe_sz);
     } else {
         dpcp::regular_rq *new_rq_ptr = nullptr;

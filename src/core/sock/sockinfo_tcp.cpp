@@ -35,6 +35,9 @@
 #include <stdio.h>
 #include <sys/time.h>
 #include <netinet/tcp.h>
+#include <vector>
+#include <set>
+#include <utility>
 #include "util/if.h"
 
 #include "utils/bullseye.h"
@@ -78,6 +81,8 @@
 #define si_tcp_logfuncall __log_info_funcall
 
 extern global_stats_t g_global_stat_static;
+
+static std::set<uint16_t> unique_segments;
 
 tcp_timers_collection *g_tcp_timers_collection = NULL;
 thread_local thread_local_tcp_timers g_thread_local_tcp_timers;
@@ -5782,9 +5787,12 @@ struct tcp_seg *sockinfo_tcp::get_tcp_seg_cached()
     }
 
     tcp_seg *head = m_tcp_seg_list;
+    // if(head->p)
+    //   unique_segments.insert(head->p->len);
     m_tcp_seg_list = head->next;
     head->next = nullptr;
     ++m_tcp_seg_in_use;
+    // __log_warn("Segments in use %d, uniqe_Seg:%d", m_tcp_seg_in_use, unique_segments.size());
 
     return head;
 }

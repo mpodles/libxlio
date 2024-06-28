@@ -386,6 +386,7 @@ public:
     uint32_t tx_prefetch_bytes;
     uint32_t tx_bufs_batch_udp;
     uint32_t tx_bufs_batch_tcp;
+    uint32_t tx_bufs_compensate;
     uint32_t tx_segs_batch_tcp;
 
     uint32_t rx_num_bufs;
@@ -592,6 +593,7 @@ extern mce_sys_var &safe_mce_sys();
 #define SYS_VAR_TX_NONBLOCKED_EAGAINS "XLIO_TX_NONBLOCKED_EAGAINS"
 #define SYS_VAR_TX_PREFETCH_BYTES     "XLIO_TX_PREFETCH_BYTES"
 #define SYS_VAR_TX_BUFS_BATCH_TCP     "XLIO_TX_BUFS_BATCH_TCP"
+#define SYS_VAR_TX_BUFS_COMPENSATE     "XLIO_TX_BUFS_COMPENSATE"
 #define SYS_VAR_TX_SEGS_BATCH_TCP     "XLIO_TX_SEGS_BATCH_TCP"
 
 #define SYS_VAR_STRQ                            "XLIO_STRQ"
@@ -931,7 +933,7 @@ extern mce_sys_var &safe_mce_sys();
 #define MAX_STATS_FD_NUM   1024
 #define MAX_WINDOW_SCALING 14
 
-#define STRQ_MIN_STRIDES_NUM       512
+#define STRQ_MIN_STRIDES_NUM       64
 #define STRQ_MAX_STRIDES_NUM       65536
 #define STRQ_MIN_STRIDE_SIZE_BYTES 64
 #define STRQ_MAX_STRIDE_SIZE_BYTES 8192

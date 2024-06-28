@@ -1026,6 +1026,7 @@ extern "C" EXPORT_SYMBOL ssize_t recv(int __fd, void *__buf, size_t __nbytes, in
     PROFILE_FUNC
 
     srdr_logfuncall_entry("fd=%d", __fd);
+    srdr_loginfo("RECV nbytes=%d", __nbytes);
 
     socket_fd_api *p_socket_object = NULL;
     p_socket_object = fd_collection_get_sockfd(__fd);
@@ -1353,6 +1354,7 @@ extern "C" EXPORT_SYMBOL ssize_t send(int __fd, __const void *__buf, size_t __nb
     PROFILE_FUNC
 
     srdr_logfuncall_entry("fd=%d, nbytes=%d", __fd, __nbytes);
+    srdr_loginfo("send nbytes=%d", __nbytes);
 
     socket_fd_api *p_socket_object = NULL;
     p_socket_object = fd_collection_get_sockfd(__fd);

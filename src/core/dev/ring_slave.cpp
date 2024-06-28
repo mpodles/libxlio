@@ -1144,7 +1144,7 @@ bool ring_slave::request_more_tx_buffers(pbuf_type type, uint32_t count, uint32_
 {
     bool res;
 
-    ring_logfuncall("Allocating additional %d buffers for internal use", count);
+    ring_logerr("Allocating additional %d buffers for internal use", count);
 
     if (type == PBUF_ZEROCOPY) {
         res = g_buffer_pool_zc->get_buffers_thread_safe(m_zc_pool, this, count, lkey);

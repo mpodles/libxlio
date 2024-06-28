@@ -47,7 +47,6 @@
 #define MODULE_HDR MODULE_NAME "%d:%s() "
 
 #define ALIGN_WR_DOWN(_num_wr_) (std::max(32, ((_num_wr_) & ~(0xf))))
-#define RING_TX_BUFS_COMPENSATE 256U
 
 #define RING_LOCK_AND_RUN(__lock__, __func_and_params__)                                           \
     __lock__.lock();                                                                               \
@@ -106,6 +105,7 @@ ring_simple::ring_simple(int if_index, ring *parent, ring_type_t type, bool use_
     , m_p_cq_mgr_tx(NULL)
     , m_lock_ring_tx_buf_wait("ring:lock_tx_buf_wait")
     , m_tx_num_bufs(0)
+    , m_tx_bufs_compensate(safe_mce_sys().tx_bufs_compensate)
     , m_zc_num_bufs(0)
     , m_tx_num_wr(0)
     , m_missing_buf_ref_count(0)
@@ -396,7 +396,7 @@ void ring_simple::create_resources()
     m_p_cq_mgr_rx = m_p_qp_mgr->get_rx_cq_mgr();
     m_p_cq_mgr_tx = m_p_qp_mgr->get_tx_cq_mgr();
 
-    init_tx_buffers(RING_TX_BUFS_COMPENSATE);
+    init_tx_buffers(m_tx_bufs_compensate);
 
     if (safe_mce_sys().cq_moderation_enable) {
         modify_cq_moderation(safe_mce_sys().cq_moderation_period_usec,
@@ -433,6 +433,7 @@ int ring_simple::poll_and_process_element_rx(uint64_t *p_cq_poll_sn,
                                              void *pv_fd_ready_array /*NULL*/)
 {
     int ret = 0;
+    // ring_logerr("Polling rx %p", (void*)this);
     RING_TRY_LOCK_RUN_AND_UPDATE_RET(
         m_lock_ring_rx,
         m_p_cq_mgr_rx->poll_and_process_element_rx(p_cq_poll_sn, pv_fd_ready_array));
@@ -782,6 +783,7 @@ int ring_simple::send_lwip_buffer(ring_user_id_t id, xlio_ibv_send_wr *p_send_wq
 {
     NOT_IN_USE(id);
     std::lock_guard<decltype(m_lock_ring_tx)> lock(m_lock_ring_tx);
+    // ring_logerr("Sending buffer r%p", (void*)this);
     int ret = send_buffer(p_send_wqe, attr, tis);
     send_status_handler(ret, p_send_wqe);
     return ret;
@@ -907,8 +909,9 @@ mem_buf_desc_t *ring_simple::get_tx_buffers(pbuf_type type, uint32_t n_num_mem_b
     mem_buf_desc_t *head;
     descq_t &pool = type == PBUF_ZEROCOPY ? m_zc_pool : m_tx_pool;
 
+    ring_logwarn("mem_buf_tx_get called this with: n_num_mem_bufs=%d and m_tx_pool:%d", n_num_mem_bufs, m_tx_pool.size());
     if (unlikely(pool.size() < n_num_mem_bufs)) {
-        int count = std::max(RING_TX_BUFS_COMPENSATE, n_num_mem_bufs);
+        int count = std::max(m_tx_bufs_compensate, n_num_mem_bufs);
         if (request_more_tx_buffers(type, count, m_tx_lkey)) {
             /*
              * TODO Unify request_more_tx_buffers so ring_slave
@@ -950,13 +953,13 @@ mem_buf_desc_t *ring_simple::get_tx_buffers(pbuf_type type, uint32_t n_num_mem_b
 void ring_simple::return_to_global_pool()
 {
     if (unlikely(m_tx_pool.size() > (m_tx_num_bufs / 2) &&
-                 m_tx_num_bufs >= RING_TX_BUFS_COMPENSATE * 2)) {
+                 m_tx_num_bufs >= m_tx_bufs_compensate * 2)) {
         int return_bufs = m_tx_pool.size() / 2;
         m_tx_num_bufs -= return_bufs;
         g_buffer_pool_tx->put_buffers_thread_safe(&m_tx_pool, return_bufs);
     }
     if (unlikely(m_zc_pool.size() > (m_zc_num_bufs / 2) &&
-                 m_zc_num_bufs >= RING_TX_BUFS_COMPENSATE * 2)) {
+                 m_zc_num_bufs >= m_tx_bufs_compensate * 2)) {
         int return_bufs = m_zc_pool.size() / 2;
         m_zc_num_bufs -= return_bufs;
         g_buffer_pool_zc->put_buffers_thread_safe(&m_zc_pool, return_bufs);

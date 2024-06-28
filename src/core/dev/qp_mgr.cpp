@@ -533,7 +533,7 @@ void qp_mgr::post_recv_buffer(mem_buf_desc_t *p_mem_buf_desc)
 
 void qp_mgr::post_recv_buffers(descq_t *p_buffers, size_t count)
 {
-    qp_logfuncall("");
+    qp_logwarn("Posting recv buffers %d", count);
     // Called from cq_mgr context under cq_mgr::LOCK!
     while (count--) {
         post_recv_buffer(p_buffers->get_and_pop_front());
@@ -578,10 +578,30 @@ inline int qp_mgr::send_to_wire(xlio_ibv_send_wr *p_send_wqe, xlio_wr_tx_packet_
     return ret;
 }
 
+#include <set>
+#include <utility>
+
+std::set<std::pair<void*,size_t>> unique_wqe_mem_bufs;
+
+uint64_t occupancy_range(std::set<std::pair<void*,size_t>> &ranges)
+{
+  void* _min_buffer = (void*)0xFFFFFFFFFFFFFFFF;
+  void* _max_buffer = NULL;
+  for(const auto &range: ranges) {
+    if(range.first < _min_buffer)
+      _min_buffer = range.first;
+  
+    if(range.first > _max_buffer)
+      _max_buffer = range.first;
+  }
+
+  return (uint64_t)_max_buffer - (uint64_t)_min_buffer;
+}
 int qp_mgr::send(xlio_ibv_send_wr *p_send_wqe, xlio_wr_tx_packet_attr attr, xlio_tis *tis,
                  unsigned credits)
 {
     mem_buf_desc_t *p_mem_buf_desc = (mem_buf_desc_t *)p_send_wqe->wr_id;
+    unique_wqe_mem_bufs.insert(std::make_pair((void*)p_mem_buf_desc->p_buffer, p_mem_buf_desc->sz_data));
     /* Control tx completions:
      * - XLIO_TX_WRE_BATCHING - The number of Tx Work Request Elements used
      *   until a completion signal is requested.
@@ -608,7 +628,7 @@ int qp_mgr::send(xlio_ibv_send_wr *p_send_wqe, xlio_wr_tx_packet_attr attr, xlio
             qp_logerr("error from cq_mgr_tx->process_next_element (ret=%d %m)", ret);
         }
         BULLSEYE_EXCLUDE_BLOCK_END
-        qp_logfunc("polling succeeded on tx cq_mgr (%d wce)", ret);
+        qp_logwarn("polling succeeded on tx cq_mgr (%d wce), unique buffers: %d, occupied address range: %d", ret, unique_wqe_mem_bufs.size(), occupancy_range(unique_wqe_mem_bufs));
     }
 
     return 0;
