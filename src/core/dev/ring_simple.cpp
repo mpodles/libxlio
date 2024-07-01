@@ -239,6 +239,7 @@ ring_simple::~ring_simple()
 
 void ring_simple::create_resources()
 {
+    ring_logerr("Creating resources");
     net_device_val *p_ndev = g_p_net_device_table_mgr->get_net_device_val(m_parent->get_if_index());
     const slave_data_t *p_slave = p_ndev->get_slave(get_if_index());
 
@@ -528,6 +529,7 @@ bool ring_simple::reclaim_recv_buffers(descq_t *rx_reuse)
 bool ring_simple::reclaim_recv_buffers(mem_buf_desc_t *rx_reuse_lst)
 {
     bool ret = false;
+    ring_loginfo("Reclaiming recv _buffers ");
     RING_TRY_LOCK_RUN_AND_UPDATE_RET(m_lock_ring_rx,
                                      m_p_cq_mgr_rx->reclaim_recv_buffers(rx_reuse_lst));
     return ret;
@@ -742,6 +744,8 @@ inline int ring_simple::send_buffer(xlio_ibv_send_wr *p_send_wqe, xlio_wr_tx_pac
     int ret = 0;
     unsigned credits = m_p_qp_mgr->credits_calculate(p_send_wqe);
 
+    m_p_ring_stat->max_send_address = std::max(m_p_ring_stat->max_send_address, (uint64_t)((mem_buf_desc_t *)p_send_wqe->wr_id)->p_buffer);
+    m_p_ring_stat->min_send_address = std::min(m_p_ring_stat->min_send_address, (uint64_t)((mem_buf_desc_t *)p_send_wqe->wr_id)->p_buffer);
     if (likely(m_p_qp_mgr->credits_get(credits)) ||
         is_available_qp_wr(is_set(attr, XLIO_TX_PACKET_BLOCK), credits)) {
         ret = m_p_qp_mgr->send(p_send_wqe, attr, tis, credits);

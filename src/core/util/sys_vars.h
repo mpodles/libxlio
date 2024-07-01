@@ -604,6 +604,7 @@ extern mce_sys_var &safe_mce_sys();
 
 #define SYS_VAR_RX_NUM_BUFS             "XLIO_RX_BUFS"
 #define SYS_VAR_RX_BUF_SIZE             "XLIO_RX_BUF_SIZE"
+#define SYS_VAR_RX_BUF_BATCH            "XLIO_RX_BUF_BATCHING"
 #define SYS_VAR_RX_NUM_WRE              "XLIO_RX_WRE"
 #define SYS_VAR_RX_NUM_WRE_TO_POST_RECV "XLIO_RX_WRE_BATCHING"
 #define SYS_VAR_RX_NUM_POLLS            "XLIO_RX_POLL"

@@ -45,6 +45,7 @@
 #include <algorithm> // For min max
 #include <set>
 #include <utility>
+#include <algorithm>
 
 #define MODULE_NAME "cq_mgr_mlx5_strq"
 
@@ -62,7 +63,7 @@
                         ##log_args);                                                               \
     } while (0)
 
-static std::set<void*> _unique_buffers;
+static std::set<std::pair<void*, size_t>> _unique_buffers;
 // static void* _min_buffer = (void*)0xFFFFFFFFFFFFFFFF;
 // static void* _max_buffer = NULL;
 
@@ -190,7 +191,9 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
         if (!set_current_hot_buffer()) {
             return NULL;
         }
-        _unique_buffers.insert(m_rx_hot_buffer->p_buffer);
+        // _unique_buffers.insert(std::make_pair(m_rx_hot_buffer->p_buffer, m_rx_hot_buffer->sz_data));
+        m_p_cq_stat->max_buffer_pool_address = std::max(m_p_cq_stat->max_buffer_pool_address, (uint64_t)m_rx_hot_buffer->p_buffer);
+        m_p_cq_stat->min_buffer_pool_address = std::min(m_p_cq_stat->min_buffer_pool_address, (uint64_t)m_rx_hot_buffer->p_buffer);
     }
 
     if (likely(!_hot_buffer_stride)) {
@@ -253,10 +256,9 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
     } else {
         prefetch((void *)_hot_buffer_stride);
         m_p_cq_stat->n_rx_empty_cq_poll++;
-        // cq_logerr("uniqe_buffers: %ud", //%ud min:%p max:%p",
-        //            _unique_buffers.size()
-        //            // _min_buffer,
-        //            // _max_buffer
+        // cq_loginfo("uniqe_buffers: %ud, occupied range: %d", 
+        //            _unique_buffers.size(),
+        //             occupancy_range(_unique_buffers)
         //            );
     }
 
@@ -534,7 +536,7 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
         mem_buf_desc_t *buff_wqe = poll(status, buff);
 
         if (buff_wqe && (++m_qp_rec.debt >= (int)m_n_sysvar_rx_num_wr_to_post_recv)) {
-            cq_loginfo("buff_weq there but DEBT: %d > %d WRE_BATCH",
+            cq_loginfo("buff_weq is present but the DEBT: %d >= %d WRE_BATCH",
                        m_qp_rec.debt, (int)m_n_sysvar_rx_num_wr_to_post_recv);
             compensate_qp_poll_failed(); // Reuse this method as success.
         }

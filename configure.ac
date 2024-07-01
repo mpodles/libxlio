@@ -285,6 +285,7 @@ show_section_title "Check for header files"
 #
 AC_CHECK_HEADERS([sys/prctl.h sys/inotify.h sys/fanotify.h sys/capability.h])
 AC_CHECK_HEADERS([linux/ethtool.h linux/tls.h])
+AC_CHECK_HEADERS([dpu_statistics.h])
 
 dnl===-----------------------------------------------------------------------===
 dnl===
@@ -297,6 +298,8 @@ AC_CHECK_LIB([stdc++], [atoi])
 AC_CHECK_LIB([dl], [dlsym])
 AC_CHECK_LIB([rt], [clock_gettime])
 AC_CHECK_LIB([pthread], [pthread_create])
+AC_CHECK_LIB([dpu_counters], [measure_cycle_count ])
+AC_CHECK_LIB([dpu_counters], [prepare_perf_measurements])
 
 CHECK_NL_LIB()
 

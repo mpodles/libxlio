@@ -487,7 +487,7 @@ bool xlio_heap::expand(size_t size /*=0*/)
         block = new xlio_allocator_hw(m_p_alloc_func, m_p_free_func);
     }
 
-    __log_info_info("xlio heap expand size set to %lu based on heap_metadata_block=%lu mem_limit_us=%lu mem_limit=%lu",
+    __log_info_err("xlio heap expand size set to %lu based on heap_metadata_block=%lu mem_limit_us=%lu mem_limit=%lu",
                     size, safe_mce_sys().heap_metadata_block, safe_mce_sys().memory_limit_user, safe_mce_sys().memory_limit);
     data = block ? block->alloc(size) : nullptr;
     if (m_b_hw && data) {

@@ -93,6 +93,9 @@ ring_slave::ring_slave(int if_index, ring *parent, ring_type_t type, bool use_lo
 
     // use local copy of stats by default
     memset(m_p_ring_stat.get(), 0, sizeof(ring_stats_t));
+    m_p_ring_stat->max_send_address = 0;
+    m_p_ring_stat->min_send_address = 0xFFFFFFFFFFFFFFFF;
+
     m_p_ring_stat->n_type = m_type;
     if (m_parent != this) {
         m_p_ring_stat->p_ring_master = m_parent;
@@ -1152,7 +1155,7 @@ bool ring_slave::request_more_tx_buffers(pbuf_type type, uint32_t count, uint32_
         res = g_buffer_pool_tx->get_buffers_thread_safe(m_tx_pool, this, count, lkey);
     }
     if (!res) {
-        ring_logfunc("Out of mem_buf_desc from TX free pool for internal object pool");
+        ring_logerr("Out of mem_buf_desc from TX free pool for internal object pool");
         return false;
     }
 

@@ -1342,7 +1342,7 @@ void mce_sys_var::get_env_params()
     }
 
     if ((env_ptr = getenv(SYS_VAR_TX_BUFS_COMPENSATE)) != NULL) {
-        tx_bufs_compensate = (uint32_t)std::max<int32_t>(atoi(env_ptr), 1);
+        tx_bufs_batch_tcp = (uint32_t)std::max<int32_t>(atoi(env_ptr), 1);
     }
 
     if ((env_ptr = getenv(SYS_VAR_TX_SEGS_BATCH_TCP)) != NULL) {
@@ -1409,6 +1409,10 @@ void mce_sys_var::get_env_params()
 
     if ((env_ptr = getenv(SYS_VAR_RX_NUM_WRE_TO_POST_RECV)) != NULL) {
         rx_num_wr_to_post_recv = std::min(NUM_RX_WRE_TO_POST_RECV_MAX, std::max(1, atoi(env_ptr)));
+    }
+
+    if ((env_ptr = getenv(SYS_VAR_RX_BUF_BATCH)) != NULL) {
+        rx_bufs_batch = (uint32_t)atoi(env_ptr);
     }
 
     if ((env_ptr = getenv(SYS_VAR_RX_NUM_WRE)) != NULL) {

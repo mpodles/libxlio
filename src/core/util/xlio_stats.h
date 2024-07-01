@@ -247,6 +247,8 @@ typedef struct socket_stats_t {
     uint32_t n_rx_ready_byte_limit;
     uint64_t n_rx_ready_byte_count;
     uint64_t tcp_input_time;
+    uint64_t ip_output_time;
+    uint64_t dequeue_packet_time;
     uint64_t n_tx_ready_byte_count;
     uint32_t n_rx_zcopy_pkt_count;
     socket_counters_t counters;
@@ -349,10 +351,10 @@ typedef struct {
     uint32_t n_rx_cqe_error;
     uint16_t n_rx_max_stirde_per_packet;
     uint32_t n_rx_empty_cq_poll;
+    uint64_t min_buffer_pool_address;
+    uint64_t max_buffer_pool_address;
     uint64_t dummy1;
     uint64_t dummy2;
-    uint64_t dummy3;
-    uint64_t dummy4;
 } cq_stats_t;
 
 typedef struct {
@@ -371,6 +373,8 @@ typedef struct {
     uint64_t n_tx_pkt_count;
     uint64_t n_tx_byte_count;
     uint64_t n_tx_retransmits;
+    uint64_t min_send_address;
+    uint64_t max_send_address;
     void *p_ring_master;
 #ifdef DEFINED_UTLS
     uint32_t n_tx_tls_contexts;

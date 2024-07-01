@@ -111,6 +111,8 @@ cq_mgr::cq_mgr(ring_simple *p_ring, ib_ctx_handler *p_ib_ctx_handler, int cq_siz
     m_rx_queue.set_id("cq_mgr (%p) : m_rx_queue", this);
     m_rx_pool.set_id("cq_mgr (%p) : m_rx_pool", this);
     m_cq_id = atomic_fetch_and_inc(&m_n_cq_id_counter); // cq id is nonzero
+    m_p_cq_stat->min_buffer_pool_address = 0xFFFFFFFFFFFFFFFF;
+    m_p_cq_stat->max_buffer_pool_address = 0;
     if (config) {
         configure(cq_size);
     }
@@ -344,27 +346,32 @@ void cq_mgr::del_qp_tx(qp_mgr *qp)
 }
 
 // Limit of buffers to fetch from global pool
-size_t m_buffers_limit = 1300;
+size_t m_buffers_limit = 4;
+bool limit_buffers = false;
 
 bool cq_mgr::request_more_buffers()
 {
+    bool res;
+    if (limit_buffers) {
+      int space_left = m_buffers_limit - m_rx_pool.size();
+      int buffers_to_expand = std::min<size_t>(space_left, m_n_sysvar_qp_compensation_level);
+      if(buffers_to_expand <= 0) {
+        cq_logerr("Already at buffers limit");
+        return false;
+      }
+      cq_logerr("Buffers limit %d, current buffer_pool size: %d Allocating additional %d buffers for internal use",
+                    m_buffers_limit, m_p_cq_stat->n_buffer_pool_len, buffers_to_expand);
+      // Assume locked!
+      // Add an additional free buffer descs to RX cq mgr
+      res = g_buffer_pool_rx_rwqe->get_buffers_thread_safe(
+          m_rx_pool, m_p_ring, buffers_to_expand, m_rx_lkey);
 
-    size_t space_left = m_buffers_limit - m_p_cq_stat->n_buffer_pool_len;
-    size_t buffers_to_expand = std::min<size_t>(space_left, m_n_sysvar_qp_compensation_level);
-    if(buffers_to_expand <= 0) {
-      cq_logerr("Already at buffers limit");
-      return false;
     }
-    cq_logerr("Allocating additional %d buffers for internal use",
-                  buffers_to_expand);
-    // Assume locked!
-    // Add an additional free buffer descs to RX cq mgr
-    bool res = g_buffer_pool_rx_rwqe->get_buffers_thread_safe(
-        m_rx_pool, m_p_ring, buffers_to_expand, m_rx_lkey);
-    // bool res = g_buffer_pool_rx_rwqe->get_buffers_thread_safe(
-    //     m_rx_pool, m_p_ring, m_n_sysvar_qp_compensation_level, m_rx_lkey);
+    else
+      res = g_buffer_pool_rx_rwqe->get_buffers_thread_safe(
+          m_rx_pool, m_p_ring, m_n_sysvar_qp_compensation_level, m_rx_lkey);
     if (!res) {
-        cq_logfuncall("Out of mem_buf_desc from RX free pool for internal object pool");
+        cq_logerr("Out of mem_buf_desc from RX free pool for internal object pool");
         return false;
     };
 
@@ -602,6 +609,7 @@ void cq_mgr::reclaim_recv_buffer_helper(mem_buf_desc_t *buff)
                 temp->reset_ref_count();
                 free_lwip_pbuf(&temp->lwip_pbuf);
                 m_rx_pool.push_back(temp);
+                cq_logwarn("Returing buff %p to m_rx_pool", (void *)temp);
             }
             m_p_cq_stat->n_buffer_pool_len = m_rx_pool.size();
         } else {

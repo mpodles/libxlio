@@ -517,6 +517,8 @@ void print_ring_stats(ring_instance_block_t *p_ring_inst_arr)
                    "Rx Offload:", p_ring_stats->n_rx_byte_count / BYTES_TRAFFIC_UNIT,
                    p_ring_stats->n_rx_pkt_count, post_fix);
 
+            printf("Min send addr %lu \n", p_ring_stats->min_send_address);
+            printf("Max send addr %lu \n", p_ring_stats->max_send_address);
             if (p_ring_stats->n_tx_retransmits) {
                 printf(FORMAT_STATS_64bit, "Retransmissions:", p_ring_stats->n_tx_retransmits,
                        post_fix);
@@ -1499,7 +1501,13 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
                                << ",rx_polls_with_ret" 
                                << ",time_in_poll_and_process" 
                                << ",time_in_tcp_input" 
+                               << ",time_in_ip_output" 
+                               << ",time_in_dequeue_packet" 
                                << ",empty_cq_poll" 
+                               << ",m_rx_pool_min_addr" 
+                               << ",m_rx_pool_max_addr" 
+                               << ",ring_send_min_addr" 
+                               << ",ring_send_max_addr" 
                                // << ",m_rx_pool_len" 
                                // << ",m_rx_queue_len" 
                                // << ",buffer_pool_size" 
@@ -1544,17 +1552,25 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
                                   << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_polls << "," 
                                   << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_polls_with_ret << "," 
                                   << p_sh_mem->cq_inst_arr[0].cq_stats.poll_and_process_time << "," 
-                                  << p_sh_mem->skt_inst_arr[1].skt_stats.tcp_input_time << "," 
-                                  << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_empty_cq_poll << "," 
+                                  << p_sh_mem->skt_inst_arr[1].skt_stats.tcp_input_time << ","
+                                  << p_sh_mem->skt_inst_arr[1].skt_stats.ip_output_time << ","
+                                  << p_sh_mem->skt_inst_arr[1].skt_stats.dequeue_packet_time << ",";
+
+          uint64_t empty_polls = 0;
+          for(int queue = 0; queue < NUM_OF_SUPPORTED_CQS; ++queue)
+            if(p_sh_mem->cq_inst_arr[queue].b_enabled)
+              empty_polls += p_sh_mem->cq_inst_arr[queue].cq_stats.n_rx_empty_cq_poll;
+
+          user_params.csv_stream  << empty_polls << ","
+                                  << p_sh_mem->cq_inst_arr[0].cq_stats.min_buffer_pool_address << "," 
+                                  << p_sh_mem->cq_inst_arr[0].cq_stats.max_buffer_pool_address << "," 
+                                  << p_sh_mem->ring_inst_arr[0].ring_stats.min_send_address << "," 
+                                  << p_sh_mem->ring_inst_arr[0].ring_stats.max_send_address << "," 
                                   // << p_sh_mem->cq_inst_arr[0].cq_stats.n_buffer_pool_len << "," 
                                   // << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_sw_queue_len << "," 
                                   // << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_size << "," 
                                   // << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_no_bufs << "," 
                                   << std::endl;
-
-          // for(int queue = 0; queue < NUM_OF_SUPPORTED_CQS; ++queue)
-          //   user_params.csv_stream << p_sh_mem->cq_inst_arr[queue].cq_stats.n_rx_empty_cq_poll << ",";
-          // user_params.csv_stream << std::endl;
         }
 
         switch (user_params.view_mode) {
@@ -1581,11 +1597,12 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
                 show_ring_stats(p_sh_mem->ring_inst_arr, NULL);
                 show_bpool_stats(p_sh_mem->bpool_inst_arr, NULL);
                 show_global_stats(p_sh_mem->global_inst_arr, NULL);
-                for(size_t i=0; i < p_sh_mem->max_skt_inst_num; ++i)
+                for(size_t i = 0; i < p_sh_mem->max_skt_inst_num; ++i)
                   if(p_sh_mem->skt_inst_arr[i].skt_stats.tcp_input_time != 0 )
-                    std::cout<<"Input time: "<<p_sh_mem->skt_inst_arr[i].skt_stats.tcp_input_time<<" ,fd:"<<p_sh_mem->skt_inst_arr[i].skt_stats.fd
-                    <<"i: "<<i<<" max size "<<p_sh_mem->max_skt_inst_num
-                    <<std::endl;
+                    std::cout << "Input time: " << p_sh_mem->skt_inst_arr[i].skt_stats.tcp_input_time
+                              << " ,fd: " << p_sh_mem->skt_inst_arr[i].skt_stats.fd
+                              << "i: " << i << " max size " << p_sh_mem->max_skt_inst_num
+                              << std::endl;
             }
             break;
         case e_deltas:

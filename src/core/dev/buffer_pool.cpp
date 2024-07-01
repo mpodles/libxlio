@@ -181,8 +181,8 @@ buffer_pool::buffer_pool(buffer_pool_type type, size_t buf_size, alloc_t alloc_f
         __log_info_info("buf size not 0 RX POOL initial pool size=%d x2 of strq_strides_compensation_level=%ul", initial_pool_size, safe_mce_sys().strq_strides_compensation_level);
     } else if (type == BUFFER_POOL_TX) {
         // Allow to create 1024 connections with a batch.
-        m_compensation_level = safe_mce_sys().tx_bufs_batch_tcp;
         // m_compensation_level = safe_mce_sys().tx_bufs_batch_tcp * 1024;
+        m_compensation_level = safe_mce_sys().tx_bufs_batch_tcp;
         initial_pool_size = buf_size ? m_compensation_level : 0;
       // __log_info_info("TX POOL initial pool size x1024 of m_compensation_level=%ul, bufsize=%ul, init_poll_size=%ul", m_compensation_level, buf_size, initial_pool_size);
     }
@@ -276,21 +276,26 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
     if (unlikely(m_n_buffers < count) && !m_b_degraded) {
         __log_info_info("requested %lu, present %lu, all-time created %lu so asked expansion of %d because of compensation level ", count, m_n_buffers, m_n_buffers_created, m_compensation_level);
         bool result = expand(std::max<size_t>(m_compensation_level, count));
-        __log_info_info("expansion was %s", result ? "succesful" : "failed");
+        if(!result)
+          __log_info_err("expansion was failed");
         m_b_degraded = !result;
         m_p_bpool_stat->n_buffer_pool_expands += !!result;
     }
     if (unlikely(m_n_buffers < count)) {
-        __log_info_err("ERROR! not enough buffers in the pool (requested: %zu, "
-                       "have: %zu, created: %zu, Buffer pool type: %s)",
-                       count, m_n_buffers, m_n_buffers_created,
-                       m_p_bpool_stat->is_rx ? "Rx" : "Tx");
+        __log_info_err("ERROR! %s not enough buffers in the pool (requested: %zu, "
+                       "have: %zu, created: %zu)",
+                       m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy") ,
+                       count, m_n_buffers, m_n_buffers_created);
         m_p_bpool_stat->n_buffer_pool_no_bufs++;
         return false;
     }
 
     // pop buffers from the list
-    __log_info_info("%s %s requested %lu, present %lu, all-time created %lu", m_p_bpool_stat->is_rx ? "Rx" : "Tx", m_buf_size ? "" : "ZC", count, m_n_buffers, m_n_buffers_created);
+    __log_info_info("%s requested %lu, present %lu, all-time created %lu",
+                   m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy") ,
+                    count,
+                    m_n_buffers,
+                    m_n_buffers_created);
     m_n_buffers -= count;
     m_p_bpool_stat->n_buffer_pool_size -= count;
     while (count-- > 0) {

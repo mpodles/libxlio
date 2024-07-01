@@ -90,6 +90,21 @@ int check_if_regular_file(char *path)
     return 0;
 }
 
+uint64_t occupancy_range(std::set<std::pair<void*,size_t>> &ranges)
+{
+  void* _min_buffer = (void*)0xFFFFFFFFFFFFFFFF;
+  void* _max_buffer = NULL;
+  for(const auto &range: ranges) {
+    if(range.first < _min_buffer)
+      _min_buffer = range.first;
+  
+    if(range.first > _max_buffer)
+      _max_buffer = range.first;
+  }
+
+  return (uint64_t)_max_buffer - (uint64_t)_min_buffer;
+}
+
 int get_sys_max_fd_num(int def_max_fd /*=1024*/)
 {
     struct rlimit rlim;

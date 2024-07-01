@@ -36,6 +36,8 @@
 #include <time.h>
 #include <string>
 #include <string.h>
+#include <set>
+#include <utility>
 #include <ifaddrs.h>
 #include <linux/if_ether.h>
 #include <exception>
@@ -53,6 +55,9 @@
  * Check if file type is regular
  **/
 int check_if_regular_file(char *path);
+
+
+uint64_t occupancy_range(std::set<std::pair<void*,size_t>> &ranges);
 
 /**
  * L3 and L4 Header Checksum Calculation

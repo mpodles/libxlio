@@ -59,6 +59,7 @@
 #include "sockinfo_tcp.h"
 #include "tcp_seg_pool.h"
 #include "bind_no_port.h"
+#include "dpu_statistics.h"
 
 #define UNLOCK_RET(_ret)                                                                           \
     unlock_tcp_con();                                                                              \
@@ -1222,6 +1223,10 @@ err:
  */
 err_t sockinfo_tcp::ip_output(struct pbuf *p, struct tcp_seg *seg, void *v_p_conn, uint16_t flags)
 {
+    struct timespec start, end;
+    if (gettime(&start)) {
+        // cq_logerr("start err");
+    }
     sockinfo_tcp *p_si_tcp = (sockinfo_tcp *)(((struct tcp_pcb *)v_p_conn)->my_container);
     dst_entry *p_dst = p_si_tcp->m_p_connected_dst_entry;
     int max_count = p_si_tcp->m_pcb.tso.max_send_sge;
@@ -1309,6 +1314,11 @@ send_iov:
         p_si_tcp->m_p_socket_stats->counters.n_tx_retransmits++;
     }
 
+
+    if (gettime(&end)) {
+        // cq_logerr("stop err");
+    }
+    p_si_tcp->m_p_socket_stats->ip_output_time += TIME_DIFF_in_MICRO(start, end);
     return (ret >= 0 ? ERR_OK : ERR_WOULDBLOCK);
 }
 
@@ -2289,6 +2299,12 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
             return -1;
         }
     }
+
+    rx_ring_map_t::iterator iter = m_rx_ring_map.begin();
+    while (iter != m_rx_ring_map.end()) {
+      si_tcp_loginfo("Ring at %p with reuse count %d and reuse limit of %d", iter, iter->second->rx_reuse_info.n_buff_num, m_n_sysvar_rx_num_buffs_reuse);
+      ++iter;
+    }
     return_reuse_buffers_postponed();
     unlock_tcp_con();
 
@@ -2332,7 +2348,12 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
         }
 #endif /* DEFINED_UTLS */
 
+        struct timespec start, end;
+        gettime(&start);
         total_rx = dequeue_packet(p_iov, sz_iov, __from, __fromlen, in_flags, &out_flags);
+        gettime(&end);
+
+        m_socket_stats.dequeue_packet_time += TIME_DIFF_in_MICRO(start, end);
         if (total_rx < 0) {
             unlock_tcp_con();
             return total_rx;
@@ -2482,6 +2503,14 @@ bool sockinfo_tcp::rx_input_cb(mem_buf_desc_t *p_rx_pkt_mem_buf_desc_info, void 
     sock->m_xlio_thr = p_rx_pkt_mem_buf_desc_info->rx.is_xlio_thr;
 
     struct timespec start, end;
+    // prepare_perf_measurements();
+
+
+    // measurement_t measurement;
+    // if(m_socket_stats.counters.n_rx_packets%1000 == 0) {
+    //   PERF_START_MEASUREMENT(measure_cycle_count);
+    // }
+
     if (gettime(&start)) {
         // cq_logerr("start err");
     }
@@ -2490,6 +2519,11 @@ bool sockinfo_tcp::rx_input_cb(mem_buf_desc_t *p_rx_pkt_mem_buf_desc_info, void 
     if (gettime(&end)) {
         // cq_logerr("stop err");
     }
+    // if(m_socket_stats.counters.n_rx_packets%1000 == 0) {
+    //   PERF_STOP_MEASUREMENT(measure_cycle_count);
+    //   PERF_READ_MEASUREMENT(measure_cycle_count, &measurement, sizeof(measurement_t));
+    // }
+
 
     m_socket_stats.tcp_input_time += TIME_DIFF_in_MICRO(start, end);
     sock->m_xlio_thr = false;
