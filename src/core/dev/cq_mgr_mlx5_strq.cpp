@@ -186,9 +186,15 @@ bool cq_mgr_mlx5_strq::set_current_hot_buffer()
 mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_t *&buff_stride)
 {
     mem_buf_desc_t *buff = NULL;
+    struct timespec start, end;
+
+    gettime(&start);
 
     if (unlikely(!m_rx_hot_buffer)) {
         if (!set_current_hot_buffer()) {
+            m_p_cq_stat->n_rx_empty_cq_poll++;
+            gettime(&end);
+            m_p_cq_stat->empty_poll_time += TIME_DIFF_in_MICRO(start, end);
             return NULL;
         }
         // _unique_buffers.insert(std::make_pair(m_rx_hot_buffer->p_buffer, m_rx_hot_buffer->sz_data));
@@ -256,10 +262,8 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
     } else {
         prefetch((void *)_hot_buffer_stride);
         m_p_cq_stat->n_rx_empty_cq_poll++;
-        // cq_loginfo("uniqe_buffers: %ud, occupied range: %d", 
-        //            _unique_buffers.size(),
-        //             occupancy_range(_unique_buffers)
-        //            );
+        gettime(&end);
+        m_p_cq_stat->empty_poll_time += TIME_DIFF_in_MICRO(start, end);
     }
 
     prefetch((uint8_t *)m_mlx5_cq.cq_buf +
@@ -533,6 +537,8 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
     uint32_t ret = 0;
     while (ret < m_n_sysvar_cq_poll_batch_max) {
         mem_buf_desc_t *buff = nullptr;
+        // buff_wqe is only returned when the CQE fetched completes the WQE
+        // the buff reference passed to the function will point to the striding buffer fetched from CQ
         mem_buf_desc_t *buff_wqe = poll(status, buff);
 
         if (buff_wqe && (++m_qp_rec.debt >= (int)m_n_sysvar_rx_num_wr_to_post_recv)) {

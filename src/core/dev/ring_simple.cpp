@@ -745,7 +745,8 @@ inline int ring_simple::send_buffer(xlio_ibv_send_wr *p_send_wqe, xlio_wr_tx_pac
     unsigned credits = m_p_qp_mgr->credits_calculate(p_send_wqe);
 
     m_p_ring_stat->max_send_address = std::max(m_p_ring_stat->max_send_address, (uint64_t)((mem_buf_desc_t *)p_send_wqe->wr_id)->p_buffer);
-    m_p_ring_stat->min_send_address = std::min(m_p_ring_stat->min_send_address, (uint64_t)((mem_buf_desc_t *)p_send_wqe->wr_id)->p_buffer);
+    if (((mem_buf_desc_t *)p_send_wqe->wr_id)->p_buffer)
+      m_p_ring_stat->min_send_address = std::min(m_p_ring_stat->min_send_address, (uint64_t)((mem_buf_desc_t *)p_send_wqe->wr_id)->p_buffer);
     if (likely(m_p_qp_mgr->credits_get(credits)) ||
         is_available_qp_wr(is_set(attr, XLIO_TX_PACKET_BLOCK), credits)) {
         ret = m_p_qp_mgr->send(p_send_wqe, attr, tis, credits);

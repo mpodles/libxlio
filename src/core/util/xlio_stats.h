@@ -353,7 +353,7 @@ typedef struct {
     uint32_t n_rx_empty_cq_poll;
     uint64_t min_buffer_pool_address;
     uint64_t max_buffer_pool_address;
-    uint64_t dummy1;
+    uint64_t empty_poll_time;
     uint64_t dummy2;
 } cq_stats_t;
 

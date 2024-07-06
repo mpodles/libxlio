@@ -1025,7 +1025,7 @@ retry_is_ready:
     __off64_t file_offset = 0;
     bool block_this_run = BLOCK_THIS_RUN(m_b_blocking, __flags);
     for (size_t i = 0; i < sz_iov; i++) {
-        si_tcp_logfunc("iov:%d base=%p len=%d", i, p_iov[i].iov_base, p_iov[i].iov_len);
+        si_tcp_logwarn("iov:%d base=%p len=%d", i, p_iov[i].iov_base, p_iov[i].iov_len);
         if (unlikely(!p_iov[i].iov_base)) {
             continue;
         }
@@ -1058,6 +1058,7 @@ retry_is_ready:
                     goto err;
                 }
                 // force out TCP data before going on wait()
+                si_tcp_logwarn("TCP OUTPUT %d", pos);
                 tcp_output(&m_pcb);
 
                 /* Set return values for nonblocking socket and finish processing */
@@ -1121,6 +1122,7 @@ retry_is_ready:
                 }
             }
 
+            si_tcp_logwarn("tcp_write in retry_write: ptr: %p, size: %tx_size", tx_ptr, tx_size);
             err = tcp_write(&m_pcb, tx_ptr, tx_size, apiflags, &tx_arg.priv);
             if (unlikely(err != ERR_OK)) {
                 if (unlikely(err == ERR_CONN)) { // happens when remote drops during big write
@@ -1168,6 +1170,7 @@ retry_is_ready:
         }
     }
 done:
+    si_tcp_logwarn("TCP OUTPUT at finish rcv_wnd:%d, rcv_ann_wnd:%d", m_pcb.rcv_wnd, m_pcb.rcv_ann_wnd);
     tcp_output(&m_pcb); // force data out
 
     if (unlikely(is_dummy)) {
