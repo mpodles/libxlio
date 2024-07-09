@@ -518,10 +518,15 @@ void *xlio_heap::alloc(size_t &size)
     size_t actual_size = (size + s_pagesize - 1) & ~(s_pagesize - 1U);
     void *data = nullptr;
 
+    __log_info_err("XLIO heap %s trying to allocate: %d bytes that's size aligned from %d, latest block has %d memory",
+                   m_b_hw ? "DATA" : "METADATA",
+                   actual_size,
+                   size,
+                   m_blocks.back()->size() - m_latest_offset);
 repeat:
     if (actual_size + m_latest_offset <= m_blocks.back()->size()) {
         data = (void *)((uintptr_t)m_blocks.back()->data() + m_latest_offset);
-        __log_info_info("Allocating %zu bytes from block which has size of:%zu at offset:%zu", size, m_blocks.back()->size(), m_latest_offset);
+        __log_info_err("Allocated from block of size:%zu at offset:%zu, size left:%zu", m_blocks.back()->size(), m_latest_offset, (m_blocks.back()->size() - m_latest_offset + actual_size));
         m_latest_offset += actual_size;
     } else if (!m_b_hw) {
         if (expand(std::max(safe_mce_sys().heap_metadata_block, actual_size))) {

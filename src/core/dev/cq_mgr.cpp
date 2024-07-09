@@ -583,7 +583,7 @@ void cq_mgr::compensate_qp_poll_failed()
     // Assume locked!!!
     // Compensate QP for all completions debt
     if (m_qp_rec.debt) {
-        // cq_logerr("debt: %d, pool_size: %d",m_qp_rec.debt, m_rx_pool.size());
+        cq_logerr("debt: %d, pool_size: %d",m_qp_rec.debt, m_rx_pool.size());
         if (likely(m_rx_pool.size() || request_more_buffers())) {
             size_t buffers = std::min<size_t>(m_qp_rec.debt, m_rx_pool.size());
             m_qp_rec.qp->post_recv_buffers(&m_rx_pool, buffers);
@@ -609,7 +609,7 @@ void cq_mgr::reclaim_recv_buffer_helper(mem_buf_desc_t *buff)
                 temp->reset_ref_count();
                 free_lwip_pbuf(&temp->lwip_pbuf);
                 m_rx_pool.push_back(temp);
-                cq_logwarn("Returing buff %p to m_rx_pool", (void *)temp);
+                cq_logerr("Returing buff %p to m_rx_pool", (void *)temp);
             }
             m_p_cq_stat->n_buffer_pool_len = m_rx_pool.size();
         } else {
@@ -617,6 +617,9 @@ void cq_mgr::reclaim_recv_buffer_helper(mem_buf_desc_t *buff)
             g_buffer_pool_rx_rwqe->put_buffers_thread_safe(buff);
         }
     }
+    else {
+      __log_info_err("Not returning buffer since either buff ref count:%d of pbuf ref:%d are not lower than 1", buff->get_ref_count(), buff->lwip_pbuf.pbuf.ref);
+  }
 }
 
 void cq_mgr::process_tx_buffer_list(mem_buf_desc_t *p_mem_buf_desc)

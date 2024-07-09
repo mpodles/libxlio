@@ -273,11 +273,12 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
 
     mem_buf_desc_t *head;
 
+    __log_info_err("%s requested %lu, present %lu, all-time created %lu ", m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy") , count, m_n_buffers, m_n_buffers_created);
     if (unlikely(m_n_buffers < count) && !m_b_degraded) {
-        __log_info_info("requested %lu, present %lu, all-time created %lu so asked expansion of %d because of compensation level ", count, m_n_buffers, m_n_buffers_created, m_compensation_level);
+        __log_info_info("asked expansion of m_compensation_level=%d", m_compensation_level);
         bool result = expand(std::max<size_t>(m_compensation_level, count));
         if(!result)
-          __log_info_err("expansion was failed");
+          __log_info_err("While getting buffers expansion of buffer_pool failed");
         m_b_degraded = !result;
         m_p_bpool_stat->n_buffer_pool_expands += !!result;
     }
@@ -287,15 +288,11 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
                        m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy") ,
                        count, m_n_buffers, m_n_buffers_created);
         m_p_bpool_stat->n_buffer_pool_no_bufs++;
+        abort();
         return false;
     }
 
     // pop buffers from the list
-    __log_info_info("%s requested %lu, present %lu, all-time created %lu",
-                   m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy") ,
-                    count,
-                    m_n_buffers,
-                    m_n_buffers_created);
     m_n_buffers -= count;
     m_p_bpool_stat->n_buffer_pool_size -= count;
     while (count-- > 0) {

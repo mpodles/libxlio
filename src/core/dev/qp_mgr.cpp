@@ -534,7 +534,7 @@ void qp_mgr::post_recv_buffer(mem_buf_desc_t *p_mem_buf_desc)
 
 void qp_mgr::post_recv_buffers(descq_t *p_buffers, size_t count)
 {
-    qp_logwarn("Posting recv buffers %d", count);
+    qp_loginfo("qp_mgr Posting recv buffers %d", count);
     // Called from cq_mgr context under cq_mgr::LOCK!
     while (count--) {
         post_recv_buffer(p_buffers->get_and_pop_front());

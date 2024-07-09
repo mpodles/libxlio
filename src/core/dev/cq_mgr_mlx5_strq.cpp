@@ -255,7 +255,7 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
             buff_stride = _hot_buffer_stride;
             _hot_buffer_stride = nullptr;
         } else if (status != BS_CQE_INVALID) {
-            cq_loginfo("wqe IS FILLER");
+            cq_logwarn("CQ IS FILLER and WQE is%s complete - going to reclaim the buffer", is_wqe_complete ? "" : " not");
             reclaim_recv_buffer_helper(_hot_buffer_stride);
             _hot_buffer_stride = nullptr;
         }
@@ -371,10 +371,19 @@ inline bool cq_mgr_mlx5_strq::strq_cqe_to_mem_buff_desc(struct xlio_mlx5_cqe *cq
     //            (host_byte_cnt & 0x0000FFFFU), _hot_buffer_stride->rx.strides_num,
     //            _current_wqe_consumed_bytes, m_rx_hot_buffer, m_rx_hot_buffer->sz_buffer);
 
-    cq_loginfo("STRQ CQE: bytes in CQE: %" PRIu32 ", hot_buffer_stride.strides: %hu, Consumed-Bytes: %" PRIu32
-               ", m_rx_hot_buffer: %p, its_size: %zu",
-               (host_byte_cnt & 0x0000FFFFU), _hot_buffer_stride->rx.strides_num,
-               _current_wqe_consumed_bytes, m_rx_hot_buffer, m_rx_hot_buffer->sz_buffer);
+    cq_logwarn("\n"
+               "STRQ CQE: bytes in CQE: %" PRIu32 ", \n"
+               "STRIDES in CQE hot_buffer_stride.strides: %" PRIu16 "\n" 
+               "Consumed-Bytes: %" PRIu32 "/%" PRIu32 "\n"
+               "m_rx_hot_buffer: %p\n"
+               "data inside: %" PRIu32 "\n"
+               "is filler: %s\n",
+               (host_byte_cnt & 0x0000FFFFU),
+               _hot_buffer_stride->rx.strides_num,
+               _current_wqe_consumed_bytes, _wqe_buff_size_bytes,
+               m_rx_hot_buffer,
+               m_rx_hot_buffer->sz_data,
+               is_filler ? "yes" : "no");
     // vlog_print_buffer(VLOG_FINE, "STRQ CQE. Data: ", "\n",
     //	reinterpret_cast<const char*>(_hot_buffer_stride->p_buffer), min(112,
     // static_cast<int>(_hot_buffer_stride->sz_data)));
@@ -542,8 +551,8 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
         mem_buf_desc_t *buff_wqe = poll(status, buff);
 
         if (buff_wqe && (++m_qp_rec.debt >= (int)m_n_sysvar_rx_num_wr_to_post_recv)) {
-            cq_loginfo("buff_weq is present but the DEBT: %d >= %d WRE_BATCH",
-                       m_qp_rec.debt, (int)m_n_sysvar_rx_num_wr_to_post_recv);
+            cq_logwarn("previous poll completed the WQE the DEBT: %d >= %d WRE_BATCH and the buffer_pool_len is: %d",
+                       m_qp_rec.debt, (int)m_n_sysvar_rx_num_wr_to_post_recv, m_p_cq_stat->n_buffer_pool_len);
             compensate_qp_poll_failed(); // Reuse this method as success.
         }
 
@@ -617,6 +626,11 @@ void cq_mgr_mlx5_strq::reclaim_recv_buffer_helper(mem_buf_desc_t *buff)
 
                 mem_buf_desc_t *rwqe =
                     reinterpret_cast<mem_buf_desc_t *>(buff->lwip_pbuf.pbuf.desc.mdesc);
+                __log_info_err("Current Buff number of strides %d and number of strides in RWQE(%p): %d",
+                               buff->rx.strides_num,
+                               rwqe->p_buffer,
+                               rwqe->get_ref_count());
+                              
                 if (buff->rx.strides_num == rwqe->add_ref_count(-buff->rx.strides_num)) {
                     // Is last stride.
                     cq_mgr::reclaim_recv_buffer_helper(rwqe);
@@ -640,6 +654,9 @@ void cq_mgr_mlx5_strq::reclaim_recv_buffer_helper(mem_buf_desc_t *buff)
             g_buffer_pool_rx_ptr->put_buffers_thread_safe(buff);
         }
     }
+    else {
+      __log_info_err("Not returning buffer since either buff ref count:%d of pbuf ref:%d are not lower than 1", buff->get_ref_count(), buff->lwip_pbuf.pbuf.ref);
+  }
 }
 
 #endif /* DEFINED_DIRECT_VERBS */
