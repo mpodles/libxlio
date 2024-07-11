@@ -255,7 +255,7 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
             buff_stride = _hot_buffer_stride;
             _hot_buffer_stride = nullptr;
         } else if (status != BS_CQE_INVALID) {
-            cq_logwarn("CQ IS FILLER and WQE is%s complete - going to reclaim the buffer", is_wqe_complete ? "" : " not");
+            cq_logfunc("CQ IS FILLER and WQE is%s complete - going to reclaim the buffer", is_wqe_complete ? "" : " not");
             reclaim_recv_buffer_helper(_hot_buffer_stride);
             _hot_buffer_stride = nullptr;
         }
@@ -376,13 +376,13 @@ inline bool cq_mgr_mlx5_strq::strq_cqe_to_mem_buff_desc(struct xlio_mlx5_cqe *cq
                "STRIDES in CQE hot_buffer_stride.strides: %" PRIu16 "\n" 
                "Consumed-Bytes: %" PRIu32 "/%" PRIu32 "\n"
                "m_rx_hot_buffer: %p\n"
-               "data inside: %" PRIu32 "\n"
+               "hot_buffer_stride: %p\n"
                "is filler: %s\n",
                (host_byte_cnt & 0x0000FFFFU),
                _hot_buffer_stride->rx.strides_num,
                _current_wqe_consumed_bytes, _wqe_buff_size_bytes,
-               m_rx_hot_buffer,
-               m_rx_hot_buffer->sz_data,
+               m_rx_hot_buffer->p_buffer,
+               _hot_buffer_stride,
                is_filler ? "yes" : "no");
     // vlog_print_buffer(VLOG_FINE, "STRQ CQE. Data: ", "\n",
     //	reinterpret_cast<const char*>(_hot_buffer_stride->p_buffer), min(112,
@@ -558,8 +558,8 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
 
         if (buff) {
             ++ret;
-            cq_loginfo("poll and process buff size %d, ret: %d", buff->sz_data, ret);
             if (cqe_process_rx(buff, status)) {
+                cq_logwarn("Processing received buffer nr: %d of size %d\n", ret, buff->sz_data);
                 ++ret_rx_processed;
                 process_recv_buffer(buff, pv_fd_ready_array);
             }
@@ -626,10 +626,15 @@ void cq_mgr_mlx5_strq::reclaim_recv_buffer_helper(mem_buf_desc_t *buff)
 
                 mem_buf_desc_t *rwqe =
                     reinterpret_cast<mem_buf_desc_t *>(buff->lwip_pbuf.pbuf.desc.mdesc);
-                __log_info_err("Current Buff number of strides %d and number of strides in RWQE(%p): %d",
+                __log_info_warn("Current Stride (%p) number of strides %d and number of strides in RWQE(%p): %d (%d-%d=%d) \n",
+                               buff,
                                buff->rx.strides_num,
                                rwqe->p_buffer,
-                               rwqe->get_ref_count());
+                               rwqe->get_ref_count(),
+                               rwqe->get_ref_count(),
+                               buff->rx.strides_num,
+                               rwqe->get_ref_count() - buff->rx.strides_num
+                               );
                               
                 if (buff->rx.strides_num == rwqe->add_ref_count(-buff->rx.strides_num)) {
                     // Is last stride.

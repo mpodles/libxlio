@@ -48,8 +48,8 @@
 #include "sockinfo_ulp.h"
 #include "sockinfo_nvme.h"
 
-#define si_tcp_logerr     __log_info_err
-#define MODULE_NAME "si_tcp"
+// #define si_tcp_logerr     __log_info_err
+// #define MODULE_NAME "si_tcp"
 
 #define BLOCK_THIS_RUN(blocking, flags) (blocking && !(flags & MSG_DONTWAIT))
 
@@ -438,7 +438,6 @@ private:
 
     inline void return_reuse_buffers_postponed()
     {
-      si_tcp_logerr("Trying to return buffers m_rx_reuse_buf_postponed:%d", m_rx_reuse_buf_postponed);
         if (!m_rx_reuse_buf_postponed) {
             return;
         }

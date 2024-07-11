@@ -222,6 +222,7 @@ inline void sockinfo_tcp::return_pending_tx_buffs()
 
 inline void sockinfo_tcp::reuse_buffer(mem_buf_desc_t *buff)
 {
+    si_tcp_logwarn("reusing buffer: %p of type: %d", buff->p_buffer, buff->lwip_pbuf.pbuf.type);
     /* Special case when ZC buffers are used in RX path. */
     if (buff->lwip_pbuf.pbuf.type == PBUF_ZEROCOPY) {
         dst_entry_tcp *p_dst = (dst_entry_tcp *)(m_p_connected_dst_entry);
@@ -2004,6 +2005,7 @@ inline void sockinfo_tcp::rx_lwip_process_chained_pbufs(pbuf *p)
 
 inline void sockinfo_tcp::save_packet_info_in_ready_list(pbuf *p)
 {
+    si_tcp_logwarn("SAVING pbuf=%p to m_rx_pkt_ready_list\n");
     m_rx_pkt_ready_list.push_back(reinterpret_cast<mem_buf_desc_t *>(p));
     m_n_rx_pkt_ready_list_count++;
     m_rx_ready_byte_count += p->tot_len;
@@ -2286,7 +2288,7 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
         }
     }
 
-    si_tcp_logfunc("rx: iov=%p niovs=%d", p_iov, sz_iov);
+    si_tcp_logwarn("rx: iov=%p niovs=%d", p_iov, sz_iov);
 
     /* poll rx queue till we have something */
     lock_tcp_con();
@@ -2308,10 +2310,17 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
       si_tcp_loginfo("Ring at %p with reuse count %d and reuse limit of %d", iter, iter->second->rx_reuse_info.n_buff_num, m_n_sysvar_rx_num_buffs_reuse);
       ++iter;
     }
+
+    si_tcp_logwarn("Going into return buffers with %s and will%s return: %d buffer",
+                  m_p_rx_ring ? "one ring" : "map of rings",
+                  !m_rx_reuse_buf_postponed ? " NOT": "",
+                  m_rx_reuse_buff.n_buff_num
+                  );
     return_reuse_buffers_postponed();
     unlock_tcp_con();
 
     while (m_rx_ready_byte_count < total_iov_sz) {
+        si_tcp_logwarn("rx loop: m_rx_ready_byte_count:%d < total_iov_sz=%d %s", m_rx_ready_byte_count, total_iov_sz, block_this_run ? "BLOCKING" : "");
         if (unlikely(g_b_exit || !is_rtr() || (m_skip_cq_poll_in_rx && (errno = EAGAIN)) ||
                      (rx_wait_lockless(poll_count, block_this_run) < 0))) {
             int ret = handle_rx_error(block_this_run);
@@ -2325,7 +2334,7 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
 
     lock_tcp_con();
 
-    si_tcp_logfunc("something in rx queues: %d %p", m_n_rx_pkt_ready_list_count,
+    si_tcp_logwarn("something in rx queues: %d %p", m_n_rx_pkt_ready_list_count,
                    m_rx_pkt_ready_list.front());
 
     bool process_cmsg = true;
@@ -2351,6 +2360,7 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
         }
 #endif /* DEFINED_UTLS */
 
+        si_tcp_logwarn("going into dequeue_packet");
         struct timespec start, end;
         gettime(&start);
         total_rx = dequeue_packet(p_iov, sz_iov, __from, __fromlen, in_flags, &out_flags);
@@ -5641,6 +5651,7 @@ struct pbuf *sockinfo_tcp::tcp_tx_pbuf_alloc(void *p_conn, pbuf_type type, pbuf_
 void sockinfo_tcp::tcp_rx_pbuf_free(struct pbuf *p_buff)
 {
     mem_buf_desc_t *desc = (mem_buf_desc_t *)p_buff;
+    __log_warn("RX freeing pbuf payload:%p mem_buf_desc:%p", p_buff->payload, desc->p_buffer);
 
     if (desc->p_desc_owner != NULL && p_buff->type != PBUF_ZEROCOPY) {
         desc->p_desc_owner->mem_buf_rx_release(desc);
