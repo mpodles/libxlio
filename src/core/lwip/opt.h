@@ -338,28 +338,28 @@ typedef int64_t s64_t;
  * PBUF_DEBUG: Enable debugging in pbuf.c.
  */
 #ifndef PBUF_DEBUG
-#define PBUF_DEBUG LWIP_DBG_OFF
+#define PBUF_DEBUG LWIP_DBG_ON
 #endif
 
 /**
  * TCP_DEBUG: Enable debugging for TCP.
  */
 #ifndef TCP_DEBUG
-#define TCP_DEBUG LWIP_DBG_OFF
+#define TCP_DEBUG LWIP_DBG_ON
 #endif
 
 /**
  * TCP_INPUT_DEBUG: Enable debugging in tcp_in.c for incoming debug.
  */
 #ifndef TCP_INPUT_DEBUG
-#define TCP_INPUT_DEBUG LWIP_DBG_OFF
+#define TCP_INPUT_DEBUG LWIP_DBG_ON
 #endif
 
 /**
  * TCP_FR_DEBUG: Enable debugging in tcp_in.c for fast retransmit.
  */
 #ifndef TCP_FR_DEBUG
-#define TCP_FR_DEBUG LWIP_DBG_OFF
+#define TCP_FR_DEBUG LWIP_DBG_ON
 #endif
 
 /**
@@ -367,49 +367,49 @@ typedef int64_t s64_t;
  * timeout.
  */
 #ifndef TCP_RTO_DEBUG
-#define TCP_RTO_DEBUG LWIP_DBG_OFF
+#define TCP_RTO_DEBUG LWIP_DBG_ON
 #endif
 
 /**
  * TCP_CWND_DEBUG: Enable debugging for TCP congestion window.
  */
 #ifndef TCP_CWND_DEBUG
-#define TCP_CWND_DEBUG LWIP_DBG_OFF
+#define TCP_CWND_DEBUG LWIP_DBG_ON
 #endif
 
 /**
  * TCP_WND_DEBUG: Enable debugging in tcp_in.c for window updating.
  */
 #ifndef TCP_WND_DEBUG
-#define TCP_WND_DEBUG LWIP_DBG_OFF
+#define TCP_WND_DEBUG LWIP_DBG_ON
 #endif
 
 /**
  * TCP_OUTPUT_DEBUG: Enable debugging in tcp_out.c output functions.
  */
 #ifndef TCP_OUTPUT_DEBUG
-#define TCP_OUTPUT_DEBUG LWIP_DBG_OFF
+#define TCP_OUTPUT_DEBUG LWIP_DBG_ON
 #endif
 
 /**
  * TCP_RST_DEBUG: Enable debugging for TCP with the RST message.
  */
 #ifndef TCP_RST_DEBUG
-#define TCP_RST_DEBUG LWIP_DBG_OFF
+#define TCP_RST_DEBUG LWIP_DBG_ON
 #endif
 
 /**
  * TCP_QLEN_DEBUG: Enable debugging for TCP queue lengths.
  */
 #ifndef TCP_QLEN_DEBUG
-#define TCP_QLEN_DEBUG LWIP_DBG_OFF
+#define TCP_QLEN_DEBUG LWIP_DBG_ON
 #endif
 
 /**
  * TCP_TSO_DEBUG: Enable debugging for TSO.
  */
 #ifndef TCP_TSO_DEBUG
-#define TCP_TSO_DEBUG LWIP_DBG_OFF
+#define TCP_TSO_DEBUG LWIP_DBG_ON
 #endif
 
 #define LWIP_DEBUG_ENABLE                                                                          \
@@ -442,7 +442,7 @@ typedef int64_t s64_t;
 #define LWIP_DEBUGF_IP_ADDR(debug, message, ip_addr, is_ipv6)                                      \
     do {                                                                                           \
         char _buf[INET6_ADDRSTRLEN] = "\0";                                                        \
-        inet_ntop((is_ipv6) ? AF_INET6 : AF_INET, ip_addr, _buf, sizeof(_buf));                    \
+        inet_ntop((is_ipv6) ? AF_INET6 : AF_INET, (is_ipv6) ? (u32_t *)&ip_addr.ip6.addr : (u32_t *)&ip_addr.ip4.addr, _buf, sizeof(_buf));                    \
         LWIP_DEBUGF(debug, ("%s : %s\n", message, _buf));                                          \
     } while (0)
 

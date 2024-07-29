@@ -1170,6 +1170,8 @@ static void do_global_ctors_helper()
                                                         s_cmd_nl, PERIODIC_TIMER, NULL);
     }
 
+  vlog_printf(VLOG_ERROR, "Finished main constructors \n");
+
 #ifdef DEFINED_UTLS
     xlio_tls_api_setup();
 #endif /* DEFINED_UTLS */

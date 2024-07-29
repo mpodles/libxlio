@@ -222,7 +222,6 @@ inline void sockinfo_tcp::return_pending_tx_buffs()
 
 inline void sockinfo_tcp::reuse_buffer(mem_buf_desc_t *buff)
 {
-    si_tcp_logwarn("reusing buffer: %p of type: %d", buff->p_buffer, buff->lwip_pbuf.pbuf.type);
     /* Special case when ZC buffers are used in RX path. */
     if (buff->lwip_pbuf.pbuf.type == PBUF_ZEROCOPY) {
         dst_entry_tcp *p_dst = (dst_entry_tcp *)(m_p_connected_dst_entry);
@@ -258,10 +257,14 @@ inline void sockinfo_tcp::reuse_buffer(mem_buf_desc_t *buff)
     if (likely(m_p_rx_ring)) {
         m_rx_reuse_buff.n_buff_num += buff->rx.n_frags;
         m_rx_reuse_buff.rx_reuse.push_back(buff);
+        si_tcp_logwarn("reusing buffer: %p of type: %d, m_rx_reuse_buff contains %d buffers", 
+                       buff->p_buffer, 
+                       buff->lwip_pbuf.pbuf.type,
+                       m_rx_reuse_buff.n_buff_num);
         if (m_rx_reuse_buff.n_buff_num < m_n_sysvar_rx_num_buffs_reuse) {
             return;
         }
-        if (m_rx_reuse_buff.n_buff_num >= 2 * m_n_sysvar_rx_num_buffs_reuse) {
+        if (m_rx_reuse_buff.n_buff_num >= 1 * m_n_sysvar_rx_num_buffs_reuse) {
             if (m_p_rx_ring->reclaim_recv_buffers(&m_rx_reuse_buff.rx_reuse)) {
                 m_rx_reuse_buff.n_buff_num = 0;
             } else {
@@ -1123,7 +1126,7 @@ retry_is_ready:
                 }
             }
 
-            si_tcp_logwarn("tcp_write in retry_write: ptr: %p, size: %tx_size", tx_ptr, tx_size);
+            si_tcp_logwarn("tcp_write in retry_write: ptr: %p, size: %d", tx_ptr, tx_size);
             err = tcp_write(&m_pcb, tx_ptr, tx_size, apiflags, &tx_arg.priv);
             if (unlikely(err != ERR_OK)) {
                 if (unlikely(err == ERR_CONN)) { // happens when remote drops during big write
@@ -1171,7 +1174,7 @@ retry_is_ready:
         }
     }
 done:
-    si_tcp_logwarn("TCP OUTPUT at finish rcv_wnd:%d, rcv_ann_wnd:%d", m_pcb.rcv_wnd, m_pcb.rcv_ann_wnd);
+    si_tcp_logwarn("reached tcp_output with m_pcb: rcv_wnd:%d, rcv_ann_wnd:%d", m_pcb.rcv_wnd, m_pcb.rcv_ann_wnd);
     tcp_output(&m_pcb); // force data out
 
     if (unlikely(is_dummy)) {
@@ -2311,7 +2314,7 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
       ++iter;
     }
 
-    si_tcp_logwarn("Going into return buffers with %s and will%s return: %d buffer",
+    si_tcp_logwarn("Going into return buffers with %s and will%s return %d buffers stored in m_rx_reuse_buff",
                   m_p_rx_ring ? "one ring" : "map of rings",
                   !m_rx_reuse_buf_postponed ? " NOT": "",
                   m_rx_reuse_buff.n_buff_num
@@ -2320,7 +2323,7 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
     unlock_tcp_con();
 
     while (m_rx_ready_byte_count < total_iov_sz) {
-        si_tcp_logwarn("rx loop: m_rx_ready_byte_count:%d < total_iov_sz=%d %s", m_rx_ready_byte_count, total_iov_sz, block_this_run ? "BLOCKING" : "");
+        si_tcp_logwarn("Going thorugh RX loop: m_rx_ready_byte_count:%d < total_iov_sz=%d %s", m_rx_ready_byte_count, total_iov_sz, block_this_run ? "BLOCKING" : "");
         if (unlikely(g_b_exit || !is_rtr() || (m_skip_cq_poll_in_rx && (errno = EAGAIN)) ||
                      (rx_wait_lockless(poll_count, block_this_run) < 0))) {
             int ret = handle_rx_error(block_this_run);
@@ -2334,7 +2337,7 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
 
     lock_tcp_con();
 
-    si_tcp_logwarn("something in rx queues: %d %p", m_n_rx_pkt_ready_list_count,
+    si_tcp_logwarn("After RX loop there is something in m_rx_pkt_ready_list: amount:%d front:%p", m_n_rx_pkt_ready_list_count,
                    m_rx_pkt_ready_list.front());
 
     bool process_cmsg = true;
@@ -2360,7 +2363,7 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
         }
 #endif /* DEFINED_UTLS */
 
-        si_tcp_logwarn("going into dequeue_packet");
+        si_tcp_logwarn("Going into dequeue_packet");
         struct timespec start, end;
         gettime(&start);
         total_rx = dequeue_packet(p_iov, sz_iov, __from, __fromlen, in_flags, &out_flags);

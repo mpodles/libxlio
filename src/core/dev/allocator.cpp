@@ -78,7 +78,7 @@ xlio_allocator::~xlio_allocator()
 
 void *xlio_allocator::alloc(size_t size)
 {
-    __log_info_info("Allocating %zu bytes", size);
+    __log_info_err("Actual allocator mallocing %zu bytes of type %d", size, m_type);
 
     if (m_data) {
         return nullptr;
@@ -125,7 +125,7 @@ void *xlio_allocator::alloc(size_t size)
 
 void *xlio_allocator::alloc_aligned(size_t size, size_t align)
 {
-    __log_info_dbg("Allocating %zu bytes aligned to %zu", size, align);
+    __log_info_err("Allocating %zu bytes aligned to %zu", size, align);
 
     if (m_data) {
         return nullptr;
@@ -148,7 +148,7 @@ void *xlio_allocator::alloc_aligned(size_t size, size_t align)
 
 void *xlio_allocator::alloc_huge(size_t size)
 {
-    __log_info_dbg("Allocating %zu bytes in huge tlb using mmap", size);
+    __log_info_err("Allocating %zu bytes in huge tlb using mmap", size);
 
     size_t actual_size = size;
     m_data = g_hugepage_mgr.alloc_hugepages(actual_size);
@@ -161,6 +161,7 @@ void *xlio_allocator::alloc_huge(size_t size)
         m_type = ALLOC_TYPE_HUGEPAGES;
         m_size = actual_size;
     }
+    __log_info_err("Huge tlb allocated %zu", m_size);
     return m_data;
 }
 
@@ -526,13 +527,14 @@ void *xlio_heap::alloc(size_t &size)
 repeat:
     if (actual_size + m_latest_offset <= m_blocks.back()->size()) {
         data = (void *)((uintptr_t)m_blocks.back()->data() + m_latest_offset);
-        __log_info_err("Allocated from block of size:%zu at offset:%zu, size left:%zu", m_blocks.back()->size(), m_latest_offset, (m_blocks.back()->size() - m_latest_offset + actual_size));
+        __log_info_err("Allocated from block of size:%zu at offset:%zu, size left:%zu", m_blocks.back()->size(), m_latest_offset, (m_blocks.back()->size() - (m_latest_offset + actual_size)));
         m_latest_offset += actual_size;
     } else if (!m_b_hw) {
         if (expand(std::max(safe_mce_sys().heap_metadata_block, actual_size))) {
             goto repeat;
         }
     }
+    __log_info_err("\n");
 
     if (data) {
         size = actual_size;

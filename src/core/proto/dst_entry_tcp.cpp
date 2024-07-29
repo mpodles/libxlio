@@ -115,6 +115,7 @@ ssize_t dst_entry_tcp::fast_send(const iovec *p_iov, const ssize_t sz_iov, xlio_
                (is_set(attr.flags, (xlio_wr_tx_packet_attr)(XLIO_TX_PACKET_TSO)) ||
                 (sz_iov == 1 &&
                  !is_set(attr.flags, (xlio_wr_tx_packet_attr)(XLIO_TX_PACKET_REXMIT)))))) {
+        // This branch ends at send_lwip_buffer
         size_t total_packet_len = 0;
         size_t tcp_hdr_len;
         xlio_ibv_send_wr send_wqe;

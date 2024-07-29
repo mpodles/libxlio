@@ -375,7 +375,7 @@ static inline uint32_t vlog_get_usec_since_start()
     return (ts_to_usec(&ts_now) - g_vlogger_usec_on_startup);
 }
 
-#define VLOGGER_STR_SIZE 512
+#define VLOGGER_STR_SIZE 6 * 512
 
 void vlog_output(vlog_levels_t log_level, const char *fmt, ...);
 

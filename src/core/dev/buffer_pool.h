@@ -33,6 +33,8 @@
 #ifndef BUFFER_POOL_H
 #define BUFFER_POOL_H
 
+#include <map>
+
 #include "utils/lock_wrapper.h"
 #include "util/xlio_stats.h"
 #include "proto/mem_buf_desc.h"
@@ -145,6 +147,8 @@ private:
 
     bpool_stats_t *m_p_bpool_stat;
     bpool_stats_t m_bpool_stat_static;
+    std::map<void*, uint64_t> fetched_buffers;
+
     xlio_allocator_heap m_allocator_data;
     xlio_allocator_heap m_allocator_metadata;
 };

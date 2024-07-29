@@ -172,13 +172,16 @@ buffer_pool::buffer_pool(buffer_pool_type type, size_t buf_size, alloc_t alloc_f
     xlio_stats_instance_create_bpool_block(m_p_bpool_stat);
 
     if (type == BUFFER_POOL_RX) {
+        int scaling = 4; // It has been 2 by default
         m_compensation_level =
-            buf_size ? safe_mce_sys().rx_num_wr : safe_mce_sys().strq_strides_compensation_level;
-        initial_pool_size = m_compensation_level * 2;
-      if(buf_size)
-        __log_info_info("Buf size is 0 RX POOL initial pool size=%d x2 of RX_WRE=%ul", initial_pool_size, safe_mce_sys().rx_num_wr);
-      else
-        __log_info_info("buf size not 0 RX POOL initial pool size=%d x2 of strq_strides_compensation_level=%ul", initial_pool_size, safe_mce_sys().strq_strides_compensation_level);
+            buf_size ? 1 : safe_mce_sys().strq_strides_compensation_level;
+        initial_pool_size = m_compensation_level * scaling;
+        __log_info_err("Buf size is%s 0 so RX POOL initial pool size=%d which is x%d of %s=%ul", 
+                       buf_size ? " not" : "",
+                       initial_pool_size, 
+                       scaling,
+                       buf_size ? "RX_WRE" : "strq_strides_compensation_level",
+                       buf_size ? safe_mce_sys().rx_num_wr : safe_mce_sys().strq_strides_compensation_level );
     } else if (type == BUFFER_POOL_TX) {
         // Allow to create 1024 connections with a batch.
         // m_compensation_level = safe_mce_sys().tx_bufs_batch_tcp * 1024;
@@ -208,6 +211,15 @@ buffer_pool::buffer_pool(buffer_pool_type type, size_t buf_size, alloc_t alloc_f
 buffer_pool::~buffer_pool()
 {
     __log_info_dbg("count %lu, missing %lu", m_n_buffers, m_n_buffers_created - m_n_buffers);
+    int buffer_size = 12000;
+    char buffers[buffer_size];
+    int cx = 0;
+    for(const auto buffer: fetched_buffers)
+      if (cx>=0 && cx<buffer_size)      // check returned value
+        cx += snprintf ( buffers +cx, buffer_size, "[%p, %lu],\n", buffer.first, buffer.second);
+
+    if(fetched_buffers.size())
+      __log_info_err("Buffers fetched\n %s", buffers);
     xlio_stats_instance_remove_bpool_block(m_p_bpool_stat);
 }
 
@@ -273,7 +285,7 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
 
     mem_buf_desc_t *head;
 
-    __log_info_err("%s requested %lu, present %lu, all-time created %lu ", m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy") , count, m_n_buffers, m_n_buffers_created);
+    __log_info_warn("%s requested %lu, present %lu, all-time created %lu ", m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy") , count, m_n_buffers, m_n_buffers_created);
     if (unlikely(m_n_buffers < count) && !m_b_degraded) {
         __log_info_info("asked expansion of m_compensation_level=%d", m_compensation_level);
         bool result = expand(std::max<size_t>(m_compensation_level, count));
@@ -304,6 +316,7 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
         // Init
         head->lkey = lkey;
         head->p_desc_owner = desc_owner;
+        fetched_buffers[head->p_buffer] = head->sz_buffer;
 
         // Push to queue
         pDeque.push_back(head);

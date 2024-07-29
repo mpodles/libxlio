@@ -132,6 +132,7 @@ tcp_seg *tcp_seg_pool::split_tcp_segs(uint32_t count, tcp_seg *&tcp_seg_list, ui
 bool tcp_seg_pool::expand()
 {
     size_t size = sizeof(tcp_seg) * safe_mce_sys().tx_segs_pool_batch_tcp;
+    __log_err("Allocating TCP Seg Pool of size %d", size);
     tcp_seg *tcp_segs_array = (tcp_seg *)m_allocator.alloc(size);
 
     if (!tcp_segs_array) {
@@ -153,8 +154,6 @@ bool tcp_seg_pool::expand()
         m_stats.expands++;
         g_global_stat_static.n_tcp_seg_pool_size += segs_nr;
     }
-
-    __log_err("Allocated TCP Seg Pool of size %d with %d segments", size, segs_nr);
     return true;
 }
 

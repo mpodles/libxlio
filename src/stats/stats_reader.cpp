@@ -1554,9 +1554,9 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
                                   << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_polls_with_ret << "," 
                                   << p_sh_mem->cq_inst_arr[0].cq_stats.poll_and_process_time << "," 
                                   << p_sh_mem->cq_inst_arr[0].cq_stats.empty_poll_time << "," 
-                                  << p_sh_mem->skt_inst_arr[2].skt_stats.tcp_input_time << ","
-                                  << p_sh_mem->skt_inst_arr[2].skt_stats.ip_output_time << ","
-                                  << p_sh_mem->skt_inst_arr[2].skt_stats.dequeue_packet_time << ",";
+                                  << p_sh_mem->skt_inst_arr[1].skt_stats.tcp_input_time << ","
+                                  << p_sh_mem->skt_inst_arr[1].skt_stats.ip_output_time << ","
+                                  << p_sh_mem->skt_inst_arr[1].skt_stats.dequeue_packet_time << ",";
 
           uint64_t empty_polls = 0;
           for(int queue = 0; queue < NUM_OF_SUPPORTED_CQS; ++queue)

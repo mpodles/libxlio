@@ -567,6 +567,7 @@ void net_device_table_mgr::global_ring_adapt_cq_moderation()
 void net_device_table_mgr::handle_timer_expired(void *user_data)
 {
     int timer_type = (uint64_t)user_data;
+    ndtm_logwarn("timer of type %d", timer_type);
     switch (timer_type) {
     case RING_PROGRESS_ENGINE_TIMER:
         global_ring_drain_and_procces();

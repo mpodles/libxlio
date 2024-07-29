@@ -118,6 +118,8 @@ void L3_level_tcp_input(struct pbuf *p, struct tcp_pcb *pcb)
     u8_t hdrlen;
     err_t err;
     tcp_in_data in_data;
+    printf("L3_level_tcp_input pbuf:%p payload:%p, len:%d\n", p, p->payload, p->len);
+    fflush(0);
 
     fill_parsed_ip_hdr(p->payload, &in_data.iphdr);
 
@@ -204,9 +206,13 @@ void L3_level_tcp_input(struct pbuf *p, struct tcp_pcb *pcb)
                 }
             }
             pcb->is_in_input = 1;
+            LWIP_DEBUGF(TCP_INPUT_DEBUG,
+                        ("starting tcp_process\n"));
             err = tcp_process(pcb, &in_data);
             /* A return value of ERR_ABRT means that tcp_abort() was called
                and that the pcb has been freed. If so, we don't do anything. */
+            LWIP_DEBUGF(TCP_INPUT_DEBUG,
+                        ("tcp_processing with err:%d \n", err));
             if (err != ERR_ABRT) {
                 if (in_data.recv_flags & TF_RESET) {
                     /* TF_RESET means that the connection was reset by the other
@@ -230,6 +236,8 @@ void L3_level_tcp_input(struct pbuf *p, struct tcp_pcb *pcb)
                         }
                     }
 
+                    LWIP_DEBUGF(TCP_INPUT_DEBUG,
+                                ("tcp_processing done, going to recv_data: in_data.recv_data:%p \n", in_data.recv_data));
                     while (in_data.recv_data !=
                            NULL) { // 'while' instead of 'if' because windows scale uses large pbuf
                         struct pbuf *rest = NULL;
@@ -935,10 +943,10 @@ static u32_t tcp_shrink_segment(struct tcp_pcb *pcb, struct tcp_seg *seg, u32_t 
         count++;
     }
 
-#if TCP_TSO_DEBUG
-    LWIP_DEBUGF(TCP_TSO_DEBUG | LWIP_DBG_TRACE,
-                ("tcp_shrink: count: %-5d unsent %s\n", count, _dump_seg(pcb->unsent)));
-#endif /* TCP_TSO_DEBUG */
+// #if TCP_TSO_DEBUG
+    // LWIP_DEBUGF(TCP_TSO_DEBUG | LWIP_DBG_TRACE,
+    //             ("tcp_shrink: count: %-5d unsent %d\n", count, _dump_seg(pcb->unsent)));
+// #endif /* TCP_TSO_DEBUG */
 
     return count;
 }
@@ -1296,9 +1304,9 @@ static void tcp_receive(struct tcp_pcb *pcb, tcp_in_data *in_data)
 #endif
             m = (s16_t)(tcp_ticks - pcb->rttest);
 
-            LWIP_DEBUGF(TCP_RTO_DEBUG,
-                        ("tcp_receive: experienced rtt %" U16_F " ticks (%" U16_F " msec).\n", m,
-                         m * slow_tmr_interval));
+            // LWIP_DEBUGF(TCP_RTO_DEBUG,
+            //             ("tcp_receive: experienced rtt %" U16_F " ticks (%" U16_F " msec).\n", m,
+            //              m * slow_tmr_interval));
 
             /* This is taken directly from VJs original code in his paper */
             m = m - (pcb->sa >> 3);
@@ -1310,14 +1318,17 @@ static void tcp_receive(struct tcp_pcb *pcb, tcp_in_data *in_data)
             pcb->sv += m;
             pcb->rto = (pcb->sa >> 3) + pcb->sv;
 
-            LWIP_DEBUGF(TCP_RTO_DEBUG,
-                        ("tcp_receive: RTO %" U16_F " (%" U16_F " milliseconds)\n", pcb->rto,
-                         pcb->rto * slow_tmr_interval));
+            // LWIP_DEBUGF(TCP_RTO_DEBUG,
+            //             ("tcp_receive: RTO %" U16_F " (%" U16_F " milliseconds)\n", pcb->rto,
+            //              pcb->rto * slow_tmr_interval));
 
             pcb->rttest = 0;
         }
     }
 
+    LWIP_DEBUGF(TCP_RTO_DEBUG,
+                ("tcp_receive finished RTT calculation. Checking: in_data->tcplen %" U32_F " \n",
+                 in_data->tcplen));
     /* If the incoming segment contains data, we must process it
        further unless the pcb already received a FIN.
        (RFC 793, chapter 3.9, "SEGMENT ARRIVES" in states CLOSE-WAIT, CLOSING,
@@ -1355,6 +1366,9 @@ static void tcp_receive(struct tcp_pcb *pcb, tcp_in_data *in_data)
               if (TCP_SEQ_LT(pcb->rcv_nxt, seqno + tcplen)) {*/
         if (TCP_SEQ_BETWEEN(pcb->rcv_nxt, in_data->seqno + 1,
                             in_data->seqno + in_data->tcplen - 1)) {
+          LWIP_DEBUGF(TCP_RTO_DEBUG,
+                      ("First check pcb->rcv_nxt:%" U32_F " in_data->seqno:%" U32_F " in_data->tcplen:%" U32_F " \n",
+                       pcb->rcv_nxt, in_data->seqno, in_data->tcplen));
             /* Trimming the first edge is done by pushing the payload
                pointer in the pbuf downwards. This is somewhat tricky since
                we do not want to discard the full contents of the pbuf up to
@@ -1414,6 +1428,9 @@ static void tcp_receive(struct tcp_pcb *pcb, tcp_in_data *in_data)
            and below rcv_nxt + rcv_wnd) in order to be further
            processed. */
         if (TCP_SEQ_BETWEEN(in_data->seqno, pcb->rcv_nxt, pcb->rcv_nxt + pcb->rcv_wnd - 1)) {
+          LWIP_DEBUGF(TCP_RTO_DEBUG,
+                      ("Second check pcb->rcv_nxt:%" U32_F " in_data->seqno:%" U32_F " pcb->rcv_wnd:%" U32_F " \n",
+                       pcb->rcv_nxt, in_data->seqno, pcb->rcv_wnd));
             if (pcb->rcv_nxt == in_data->seqno) {
                 /* The incoming segment is the next in sequence. We check if
                    we have to trim the end of the segment and update rcv_nxt
