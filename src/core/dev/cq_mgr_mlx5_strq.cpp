@@ -42,10 +42,8 @@
 #include "ring_simple.h"
 #include "dpu_statistics.h"
 #include <cinttypes>
-#include <algorithm> // For min max
-#include <set>
 #include <utility>
-#include <algorithm>
+#include <algorithm> // for minmax
 
 #define MODULE_NAME "cq_mgr_mlx5_strq"
 
@@ -63,7 +61,6 @@
                         ##log_args);                                                               \
     } while (0)
 
-static std::set<std::pair<void*, size_t>> _unique_buffers;
 // static void* _min_buffer = (void*)0xFFFFFFFFFFFFFFFF;
 // static void* _max_buffer = NULL;
 
@@ -89,6 +86,16 @@ cq_mgr_mlx5_strq::~cq_mgr_mlx5_strq()
 {
     cq_logfunc("");
     cq_logdbg("destroying CQ STRQ");
+
+    int buffer_size = 12000;
+    char buffers[buffer_size];
+    int cx = 0;
+    for(const auto& buffer: _unique_buffers)
+      if (cx>=0 && cx<buffer_size)      // check returned value
+        cx += snprintf ( buffers +cx, buffer_size, "[%p, %lu],\n", buffer.first, buffer.second);
+
+    if(_unique_buffers.size())
+      cq_logerr("Unique buffers used\n %s", buffers);
 
     if (m_rx_buffs_rdy_for_free_head) {
         reclaim_recv_buffer_helper(m_rx_buffs_rdy_for_free_head);
@@ -197,7 +204,7 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
             m_p_cq_stat->empty_poll_time += TIME_DIFF_in_MICRO(start, end);
             return NULL;
         }
-        // _unique_buffers.insert(std::make_pair(m_rx_hot_buffer->p_buffer, m_rx_hot_buffer->sz_data));
+        _unique_buffers.insert(std::make_pair(m_rx_hot_buffer->p_buffer, m_rx_hot_buffer->sz_data));
         m_p_cq_stat->max_buffer_pool_address = std::max(m_p_cq_stat->max_buffer_pool_address, (uint64_t)m_rx_hot_buffer->p_buffer);
         m_p_cq_stat->min_buffer_pool_address = std::min(m_p_cq_stat->min_buffer_pool_address, (uint64_t)m_rx_hot_buffer->p_buffer);
     }
@@ -524,12 +531,15 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll_and_process_socketxtreme()
 int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *pv_fd_ready_array)
 {
 
-    struct timespec start, end;
-    if (gettime(&start)) {
-        // cq_logerr("start err");
-    }
     /* Assume locked!!! */
     cq_logfuncall("");
+    struct timespec start, end;
+    gettime(&start);
+    if (m_qp_rec.debt >= (int)m_n_sysvar_rx_num_wr_to_post_recv) {
+        cq_logwarn("previous poll completed the WQE the DEBT: %d >= %d WRE_BATCH and the buffer_pool_len is: %d and the number of posted WR is %d",
+                   m_qp_rec.debt, (int)m_n_sysvar_rx_num_wr_to_post_recv, m_p_cq_stat->n_buffer_pool_len, m_qp_rec.qp->m_num_posted_wr);
+        compensate_qp_poll_failed(); // Reuse this method as success.
+    }
 
     uint32_t ret_rx_processed = process_recv_queue(pv_fd_ready_array);
     if (unlikely(ret_rx_processed >= m_n_sysvar_cq_poll_batch_max)) {
@@ -549,11 +559,10 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
         // buff_wqe is only returned when the CQE fetched completes the WQE
         // the buff reference passed to the function will point to the striding buffer fetched from CQ
         mem_buf_desc_t *buff_wqe = poll(status, buff);
-
-        if (buff_wqe && (++m_qp_rec.debt >= (int)m_n_sysvar_rx_num_wr_to_post_recv)) {
-            cq_logwarn("previous poll completed the WQE the DEBT: %d >= %d WRE_BATCH and the buffer_pool_len is: %d",
-                       m_qp_rec.debt, (int)m_n_sysvar_rx_num_wr_to_post_recv, m_p_cq_stat->n_buffer_pool_len);
-            compensate_qp_poll_failed(); // Reuse this method as success.
+        
+        if(buff_wqe) {
+          ++m_qp_rec.debt;
+          m_qp_rec.qp->m_num_posted_wr--;
         }
 
         if (buff) {

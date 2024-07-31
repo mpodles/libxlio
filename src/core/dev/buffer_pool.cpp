@@ -172,10 +172,10 @@ buffer_pool::buffer_pool(buffer_pool_type type, size_t buf_size, alloc_t alloc_f
     xlio_stats_instance_create_bpool_block(m_p_bpool_stat);
 
     if (type == BUFFER_POOL_RX) {
-        int scaling = 4; // It has been 2 by default
+        int scaling = 1; // It has been 2 by default
         m_compensation_level =
-            buf_size ? 1 : safe_mce_sys().strq_strides_compensation_level;
-        initial_pool_size = m_compensation_level * scaling;
+            buf_size ? safe_mce_sys().rx_num_wr : safe_mce_sys().strq_strides_compensation_level; // By default it has used the number of WR
+        initial_pool_size = m_compensation_level * 0.5;
         __log_info_err("Buf size is%s 0 so RX POOL initial pool size=%d which is x%d of %s=%ul", 
                        buf_size ? " not" : "",
                        initial_pool_size, 
@@ -285,7 +285,9 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
 
     mem_buf_desc_t *head;
 
-    __log_info_warn("%s requested %lu, present %lu, all-time created %lu ", m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy") , count, m_n_buffers, m_n_buffers_created);
+    __log_info_err("%s requested %lu buffers by %p, present %lu, all-time created %lu ", 
+                    m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy"),
+                    count, desc_owner, m_n_buffers, m_n_buffers_created);
     if (unlikely(m_n_buffers < count) && !m_b_degraded) {
         __log_info_info("asked expansion of m_compensation_level=%d", m_compensation_level);
         bool result = expand(std::max<size_t>(m_compensation_level, count));

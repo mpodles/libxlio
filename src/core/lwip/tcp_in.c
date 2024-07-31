@@ -49,6 +49,13 @@
 #include <stdbool.h>
 #include <string.h>
 
+// This is here to make debugging recompilation faster. For some reason headers needs to be fully recompiled whereas having debugging flags
+// in the source file allows much faster incremental recompilation
+#undef TCP_INPUT_DEBUG 
+#undef TCP_WND_DEBUG
+#define TCP_INPUT_DEBUG LWIP_DBG_OFF
+#define TCP_WND_DEBUG LWIP_DBG_OFF
+
 typedef struct parsed_ip_hdr {
     bool is_ipv6;
     s16_t header_length;
@@ -118,8 +125,7 @@ void L3_level_tcp_input(struct pbuf *p, struct tcp_pcb *pcb)
     u8_t hdrlen;
     err_t err;
     tcp_in_data in_data;
-    printf("L3_level_tcp_input pbuf:%p payload:%p, len:%d\n", p, p->payload, p->len);
-    fflush(0);
+    LWIP_DEBUGF(TCP_INPUT_DEBUG, ("L3_level_tcp_input pbuf:%p payload:%p, len:%d\n", p, p->payload, p->len));
 
     fill_parsed_ip_hdr(p->payload, &in_data.iphdr);
 

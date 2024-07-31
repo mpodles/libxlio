@@ -338,14 +338,14 @@ typedef int64_t s64_t;
  * PBUF_DEBUG: Enable debugging in pbuf.c.
  */
 #ifndef PBUF_DEBUG
-#define PBUF_DEBUG LWIP_DBG_ON
+#define PBUF_DEBUG LWIP_DBG_OFF
 #endif
 
 /**
  * TCP_DEBUG: Enable debugging for TCP.
  */
 #ifndef TCP_DEBUG
-#define TCP_DEBUG LWIP_DBG_ON
+#define TCP_DEBUG LWIP_DBG_OFF
 #endif
 
 /**
@@ -359,7 +359,7 @@ typedef int64_t s64_t;
  * TCP_FR_DEBUG: Enable debugging in tcp_in.c for fast retransmit.
  */
 #ifndef TCP_FR_DEBUG
-#define TCP_FR_DEBUG LWIP_DBG_ON
+#define TCP_FR_DEBUG LWIP_DBG_OFF
 #endif
 
 /**
@@ -367,14 +367,14 @@ typedef int64_t s64_t;
  * timeout.
  */
 #ifndef TCP_RTO_DEBUG
-#define TCP_RTO_DEBUG LWIP_DBG_ON
+#define TCP_RTO_DEBUG LWIP_DBG_OFF
 #endif
 
 /**
  * TCP_CWND_DEBUG: Enable debugging for TCP congestion window.
  */
 #ifndef TCP_CWND_DEBUG
-#define TCP_CWND_DEBUG LWIP_DBG_ON
+#define TCP_CWND_DEBUG LWIP_DBG_OFF
 #endif
 
 /**
@@ -388,28 +388,28 @@ typedef int64_t s64_t;
  * TCP_OUTPUT_DEBUG: Enable debugging in tcp_out.c output functions.
  */
 #ifndef TCP_OUTPUT_DEBUG
-#define TCP_OUTPUT_DEBUG LWIP_DBG_ON
+#define TCP_OUTPUT_DEBUG LWIP_DBG_OFF
 #endif
 
 /**
  * TCP_RST_DEBUG: Enable debugging for TCP with the RST message.
  */
 #ifndef TCP_RST_DEBUG
-#define TCP_RST_DEBUG LWIP_DBG_ON
+#define TCP_RST_DEBUG LWIP_DBG_OFF
 #endif
 
 /**
  * TCP_QLEN_DEBUG: Enable debugging for TCP queue lengths.
  */
 #ifndef TCP_QLEN_DEBUG
-#define TCP_QLEN_DEBUG LWIP_DBG_ON
+#define TCP_QLEN_DEBUG LWIP_DBG_OFF
 #endif
 
 /**
  * TCP_TSO_DEBUG: Enable debugging for TSO.
  */
 #ifndef TCP_TSO_DEBUG
-#define TCP_TSO_DEBUG LWIP_DBG_ON
+#define TCP_TSO_DEBUG LWIP_DBG_OFF
 #endif
 
 #define LWIP_DEBUG_ENABLE                                                                          \

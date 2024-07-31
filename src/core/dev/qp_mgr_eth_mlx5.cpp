@@ -343,6 +343,7 @@ void qp_mgr_eth_mlx5::post_recv_buffer_rq(mem_buf_desc_t *p_mem_buf_desc)
         }
         ENDIF_VERBS_FAILURE;
         qp_logfunc("Successful ibv_post_recv");
+        m_num_posted_wr++;
     } else {
         m_curr_rx_wr++;
     }

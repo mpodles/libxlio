@@ -35,6 +35,7 @@
 
 #include <config.h>
 #include <vector>
+#include <set>
 #include "cq_mgr_mlx5.h"
 
 class cq_mgr_mlx5_strq : public cq_mgr_mlx5 {
@@ -77,6 +78,7 @@ private:
     const uint32_t _strides_num;
     const uint32_t _wqe_buff_size_bytes;
     uint32_t _current_wqe_consumed_bytes = 0U;
+    std::set<std::pair<void*, size_t>> _unique_buffers;
 };
 
 #endif

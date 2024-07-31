@@ -347,6 +347,7 @@ protected:
     uint32_t m_curr_rx_wr;
     uintptr_t m_last_posted_rx_wr_id; // Remember so in case we flush RQ we know to wait until this
                                       // WR_ID is received
+    uint32_t m_num_posted_wr;
 
     // send wr
     uint32_t m_n_unsignaled_count;
