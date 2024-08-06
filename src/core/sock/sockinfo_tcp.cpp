@@ -37,6 +37,7 @@
 #include <netinet/tcp.h>
 #include <vector>
 #include <set>
+#include <algorithm> // For MAX
 #include <utility>
 #include "util/if.h"
 
@@ -467,6 +468,17 @@ sockinfo_tcp::~sockinfo_tcp()
     if (g_p_agent != NULL) {
         g_p_agent->unregister_cb((agent_cb_t)&sockinfo_tcp::put_agent_msg, (void *)this);
     }
+
+    int buffer_size = 12000;
+    char buffers[buffer_size];
+    int cx = 0;
+    for(const auto &buffer: m_buffers_usage)
+      if (cx>=0 && cx<buffer_size)      // check returned value
+        cx += snprintf ( buffers +cx, buffer_size, "[%p, time:%lu, len:%lu],\n", buffer.first, buffer.second.first, buffer.second.second);
+
+    if(m_buffers_usage.size())
+      si_tcp_logerr("Buffers fetched\n %s", buffers);
+
     si_tcp_logdbg("sock closed");
 }
 
@@ -2527,14 +2539,9 @@ bool sockinfo_tcp::rx_input_cb(mem_buf_desc_t *p_rx_pkt_mem_buf_desc_info, void 
     //   PERF_START_MEASUREMENT(measure_cycle_count);
     // }
 
-    if (gettime(&start)) {
-        // cq_logerr("start err");
-    }
-
+    gettime(&start);
     L3_level_tcp_input((pbuf *)p_rx_pkt_mem_buf_desc_info, pcb);
-    if (gettime(&end)) {
-        // cq_logerr("stop err");
-    }
+    gettime(&end);
     // if(m_socket_stats.counters.n_rx_packets%1000 == 0) {
     //   PERF_STOP_MEASUREMENT(measure_cycle_count);
     //   PERF_READ_MEASUREMENT(measure_cycle_count, &measurement, sizeof(measurement_t));
@@ -5310,6 +5317,10 @@ int sockinfo_tcp::zero_copy_rx(iovec *p_iov, mem_buf_desc_t *pdesc, int *p_flags
         p_packets->n_packet_num++;
         p_pkts->packet_id = (void *)p_desc_iter;
         p_pkts->sz_iov = 0;
+
+        struct timespec start;
+        gettime(&start);
+
         while (len >= 0 && p_desc_iter) {
 
             p_pkts->iov[p_pkts->sz_iov++] = p_desc_iter->rx.frag;
@@ -5320,6 +5331,8 @@ int sockinfo_tcp::zero_copy_rx(iovec *p_iov, mem_buf_desc_t *pdesc, int *p_flags
             len -= sizeof(iovec);
             offset += sizeof(iovec);
         }
+        if(false)
+          m_buffers_usage[prev->p_buffer] = std::make_pair(SEC_TO_MICRO(start.tv_sec) + NANO_TO_MICRO(start.tv_nsec), prev->sz_data);
 
         m_rx_pkt_ready_list.pop_front();
         m_p_socket_stats->n_rx_zcopy_pkt_count++;
@@ -5561,6 +5574,14 @@ int sockinfo_tcp::recvfrom_zcopy_free_packets(struct xlio_recvfrom_zcopy_packet_
     for (index = 0; index < count; index++) {
         xlio_recvfrom_zcopy_packet_t *p_pkts = (xlio_recvfrom_zcopy_packet_t *)(buf + offset);
         buff = (mem_buf_desc_t *)p_pkts->packet_id;
+
+        if(false) { 
+          struct timespec end;
+          gettime(&end);
+          uint64_t finishing_time = SEC_TO_MICRO(end.tv_sec) + NANO_TO_MICRO(end.tv_nsec);
+          const std::pair<uint64_t, uint64_t> &buffer = m_buffers_usage[(void*)(buff->p_buffer)];
+          m_buffers_usage[buff->p_buffer] = std::make_pair(finishing_time - buffer.first, buffer.second);
+        }
 
         if (m_p_rx_ring && !m_p_rx_ring->is_member(buff->p_desc_owner)) {
             errno = ENOENT;

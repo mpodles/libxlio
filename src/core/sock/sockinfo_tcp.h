@@ -33,6 +33,9 @@
 #ifndef TCP_SOCKINFO_H
 #define TCP_SOCKINFO_H
 
+#include <map>
+#include <utility>
+
 #include "utils/lock_wrapper.h"
 #include "proto/mem_buf_desc.h"
 #include "sock/socket_fd_api.h"
@@ -595,6 +598,8 @@ private:
     // stats
     uint64_t m_n_pbufs_rcvd;
     uint64_t m_n_pbufs_freed;
+    // Map of buffers with their sizes and time until they were returned
+    std::map<void*, std::pair<uint64_t, uint64_t>> m_buffers_usage;
 };
 typedef struct tcp_seg tcp_seg;
 

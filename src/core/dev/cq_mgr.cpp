@@ -371,7 +371,7 @@ bool cq_mgr::request_more_buffers()
       res = g_buffer_pool_rx_rwqe->get_buffers_thread_safe(
           m_rx_pool, m_p_ring, m_n_sysvar_qp_compensation_level, m_rx_lkey);
     if (!res) {
-        cq_logerr("Out of mem_buf_desc from RX free pool for internal object pool");
+        cq_logwarn("Out of mem_buf_desc from RX free pool for internal object pool");
         return false;
     };
 

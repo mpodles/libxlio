@@ -285,7 +285,7 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
 
     mem_buf_desc_t *head;
 
-    __log_info_err("%s requested %lu buffers by %p, present %lu, all-time created %lu ", 
+    __log_info_warn("%s requested %lu buffers by %p, present %lu, all-time created %lu ", 
                     m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy"),
                     count, desc_owner, m_n_buffers, m_n_buffers_created);
     if (unlikely(m_n_buffers < count) && !m_b_degraded) {
@@ -297,12 +297,12 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
         m_p_bpool_stat->n_buffer_pool_expands += !!result;
     }
     if (unlikely(m_n_buffers < count)) {
-        __log_info_err("ERROR! %s not enough buffers in the pool (requested: %zu, "
+        __log_info_warn("ERROR! %s not enough buffers in the pool (requested: %zu, "
                        "have: %zu, created: %zu)",
                        m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy") ,
                        count, m_n_buffers, m_n_buffers_created);
         m_p_bpool_stat->n_buffer_pool_no_bufs++;
-        abort();
+        // abort();
         return false;
     }
 
