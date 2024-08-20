@@ -296,6 +296,7 @@ sockinfo_tcp::sockinfo_tcp(int fd, int domain)
     , m_sysvar_tcp_ctl_thread(safe_mce_sys().tcp_ctl_thread)
     , m_tcp_seg_list(nullptr)
     , m_sysvar_rx_poll_on_tx_tcp(safe_mce_sys().rx_poll_on_tx_tcp)
+    , m_sysvar_detailed_stats(safe_mce_sys().detailed_stats)
     , m_user_huge_page_mask(~((uint64_t)safe_mce_sys().user_huge_page_size - 1))
     , m_required_send_block(1U)
 {
@@ -1735,6 +1736,21 @@ void sockinfo_tcp::handle_timer_expired(void *user_data)
     }
 
     tcp_timer();
+
+    if(m_sysvar_detailed_stats) {
+      uint64_t time_total = 0;
+      uint64_t buffers_total = 0;
+      for(const auto &buffer: m_buffers_usage) {
+        if (buffer.second.first < 100'000'000)
+          time_total += buffer.second.first;
+        ++buffers_total;
+      }
+      m_p_socket_stats->average_zc_buffer_time = time_total/buffers_total;
+      m_p_socket_stats->buffers_used = buffers_total;
+        // if (cx>=0 && cx<buffer_size)      // check returned value
+          // cx += snprintf ( buffers +cx, buffer_size, "[%p, time:%lu, len:%lu],\n", buffer.first, buffer.second.first, buffer.second.second);
+      m_buffers_usage.clear();
+    }
 }
 
 void sockinfo_tcp::abort_connection()
@@ -5331,7 +5347,7 @@ int sockinfo_tcp::zero_copy_rx(iovec *p_iov, mem_buf_desc_t *pdesc, int *p_flags
             len -= sizeof(iovec);
             offset += sizeof(iovec);
         }
-        if(false)
+        if(m_sysvar_detailed_stats)
           m_buffers_usage[prev->p_buffer] = std::make_pair(SEC_TO_MICRO(start.tv_sec) + NANO_TO_MICRO(start.tv_nsec), prev->sz_data);
 
         m_rx_pkt_ready_list.pop_front();
@@ -5575,7 +5591,7 @@ int sockinfo_tcp::recvfrom_zcopy_free_packets(struct xlio_recvfrom_zcopy_packet_
         xlio_recvfrom_zcopy_packet_t *p_pkts = (xlio_recvfrom_zcopy_packet_t *)(buf + offset);
         buff = (mem_buf_desc_t *)p_pkts->packet_id;
 
-        if(false) { 
+        if(m_sysvar_detailed_stats) { 
           struct timespec end;
           gettime(&end);
           uint64_t finishing_time = SEC_TO_MICRO(end.tv_sec) + NANO_TO_MICRO(end.tv_nsec);

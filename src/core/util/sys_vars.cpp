@@ -2006,6 +2006,10 @@ void mce_sys_var::get_env_params()
         rx_poll_on_tx_tcp = atoi(env_ptr) ? true : false;
     }
 
+    if ((env_ptr = getenv(SYS_VAR_DETAILED_STATS)) != NULL) {
+        detailed_stats = atoi(env_ptr) ? true : false;
+    }
+
     if ((env_ptr = getenv(SYS_VAR_RX_CQ_WAIT_CTRL)) != NULL) {
         rx_cq_wait_ctrl = atoi(env_ptr) ? true : false;
     }

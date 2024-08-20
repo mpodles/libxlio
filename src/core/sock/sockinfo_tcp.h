@@ -591,6 +591,7 @@ private:
     static const unsigned TX_CONSECUTIVE_EAGAIN_THREASHOLD = 10;
     unsigned m_tx_consecutive_eagain_count;
     bool m_sysvar_rx_poll_on_tx_tcp;
+    bool m_sysvar_detailed_stats;
     uint64_t m_user_huge_page_mask;
     unsigned m_required_send_block;
     uint16_t m_external_vlan_tag = 0U;

@@ -501,6 +501,7 @@ public:
     bool deferred_close;
     bool tcp_abort_on_close;
     bool rx_poll_on_tx_tcp;
+    bool detailed_stats;
     bool rx_cq_wait_ctrl;
     hyper_t hypervisor;
     bool trigger_dummy_send_getsockname;
@@ -712,6 +713,7 @@ extern mce_sys_var &safe_mce_sys();
 #define SYS_VAR_TCP_ABORT_ON_CLOSE             "XLIO_TCP_ABORT_ON_CLOSE"
 #define SYS_VAR_RX_POLL_ON_TX_TCP              "XLIO_RX_POLL_ON_TX_TCP"
 #define SYS_VAR_RX_CQ_WAIT_CTRL                "XLIO_RX_CQ_WAIT_CTRL"
+#define SYS_VAR_DETAILED_STATS                 "XLIO_DETAILED_STATS"
 #define SYS_VAR_TRIGGER_DUMMY_SEND_GETSOCKNAME "XLIO_TRIGGER_DUMMY_SEND_GETSOCKNAME"
 #define SYS_VAR_TCP_SEND_BUFFER_SIZE           "XLIO_TCP_SEND_BUFFER_SIZE"
 #define SYS_VAR_SKIP_POLL_IN_RX                "XLIO_SKIP_POLL_IN_RX"
@@ -802,6 +804,7 @@ extern mce_sys_var &safe_mce_sys();
 #define MCE_DEFAULT_SELECT_POLL_OS_RATIO          (10)
 #define MCE_DEFAULT_SELECT_SKIP_OS                (4)
 #define MCE_DEFAULT_SELECT_CPU_USAGE_STATS        (false)
+#define MCE_DEFAULT_DETAILED_STATS        (false)
 #ifdef DEFINED_IBV_CQ_ATTR_MODERATE
 #define MCE_DEFAULT_CQ_MODERATION_ENABLE (true)
 #else

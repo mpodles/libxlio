@@ -248,6 +248,8 @@ typedef struct socket_stats_t {
     uint64_t n_rx_ready_byte_count;
     uint64_t tcp_input_time;
     uint64_t ip_output_time;
+    uint64_t average_zc_buffer_time;
+    uint64_t buffers_used;
     uint64_t dequeue_packet_time;
     uint64_t n_tx_ready_byte_count;
     uint32_t n_rx_zcopy_pkt_count;

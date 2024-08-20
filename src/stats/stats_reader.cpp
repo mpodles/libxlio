@@ -1492,28 +1492,58 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
 
     if (user_params.csv_stream.is_open()) {
         user_params.csv_stream <<"Date,Time,"
-                               << ring_packets.hdr_val 
+                               << ring_packets.hdr_val;
                                // << socket_counters.hdr_val
                                // << tls_counters.hdr_val 
                                // << global_counters.hdr_val
                                // << cpu_usage.hdr_val 
-                               << "rx_polls" 
-                               << ",rx_polls_with_ret" 
-                               << ",time_in_poll_and_process" 
-                               << ",time_in_empty_poll" 
-                               << ",time_in_tcp_input" 
-                               << ",time_in_ip_output" 
-                               << ",time_in_dequeue_packet" 
-                               << ",empty_cq_poll" 
-                               << ",m_rx_pool_min_addr" 
-                               << ",m_rx_pool_max_addr" 
-                               << ",ring_send_min_addr" 
-                               << ",ring_send_max_addr" 
+                               // << "rx_polls" 
+                               // << ",rx_polls_with_ret" 
+                               // << ",time_in_poll_and_process" 
+                               // << ",time_in_empty_poll" 
+                               // << ",time_in_tcp_input" 
+                               // << ",time_in_ip_output" 
+                               // << ",time_in_dequeue_packet" 
+                               // << ",empty_cq_poll" 
+                               // << ",m_rx_pool_min_addr" 
+                               // << ",m_rx_pool_max_addr" 
+                               // << ",ring_send_min_addr" 
+                               // << ",ring_send_max_addr" 
                                // << ",m_rx_pool_len" 
                                // << ",m_rx_queue_len" 
                                // << ",buffer_pool_size" 
                                // << ",no_bufs" 
-                               << std::endl;
+                               // << std::endl;
+
+        for(int queue = 0; queue < NUM_OF_SUPPORTED_CQS; ++queue) {
+            if(p_sh_mem->cq_inst_arr[queue].b_enabled) {
+              user_params.csv_stream << "CQ" << queue << "_rx_polls,"
+                                     << "CQ" << queue << "_rx_polls_with_ret,"
+                                     << "CQ" << queue << "_empty_cq_poll,"
+                                     << "CQ" << queue << "_time_in_poll_and_process,"
+                                     << "CQ" << queue << "_time_in_empty_poll,"
+                                     << "CQ" << queue << "_m_rx_pool_min_addr,"
+                                     << "CQ" << queue << "_m_rx_pool_max_addr,";
+
+            }
+        }
+        for(int ring = 0; ring < NUM_OF_SUPPORTED_RINGS; ++ring) {
+            if(p_sh_mem->ring_inst_arr[ring].b_enabled) {
+              user_params.csv_stream << "RING" << ring << "_send_min_addr,"
+                                    << "RING" << ring << "_send_max_addr,";
+            }
+        }
+        for(size_t skt = 0; skt < p_sh_mem->max_skt_inst_num; ++skt) {
+            if(p_sh_mem->skt_inst_arr[skt].b_enabled) {
+              user_params.csv_stream << "SKT" << p_sh_mem->skt_inst_arr[skt].skt_stats.fd << "_time_in_tcp_input,"
+                                     << "SKT" << p_sh_mem->skt_inst_arr[skt].skt_stats.fd << "_time_in_ip_output,"
+                                     << "SKT" << p_sh_mem->skt_inst_arr[skt].skt_stats.fd << "_average_zc_buffer_time,"
+                                     << "SKT" << p_sh_mem->skt_inst_arr[skt].skt_stats.fd << "_buffers_used,"
+                                     << "SKT" << p_sh_mem->skt_inst_arr[skt].skt_stats.fd << "_time_in_dequeue_packet,";
+            }
+        }
+        user_params.csv_stream.seekp(-1, user_params.csv_stream.cur);
+        user_params.csv_stream << std::endl;
     }
     set_signal_action();
 
@@ -1545,34 +1575,45 @@ void stats_reader_handler(sh_mem_t *p_sh_mem, int pid)
             strftime(buf, sizeof(buf), "%F,%T,", localtime(&t));
             user_params.csv_stream 
                                   << buf
-                                  << ring_packets.update(p_sh_mem)
+                                  << ring_packets.update(p_sh_mem);
                                   // << socket_counters.update(p_sh_mem)
                                   // << tls_counters.update(p_sh_mem) 
                                   // << global_counters.update(p_sh_mem)
                                   // << cpu_usage.update()
-                                  << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_polls << "," 
-                                  << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_polls_with_ret << "," 
-                                  << p_sh_mem->cq_inst_arr[0].cq_stats.poll_and_process_time << "," 
-                                  << p_sh_mem->cq_inst_arr[0].cq_stats.empty_poll_time << "," 
-                                  << p_sh_mem->skt_inst_arr[1].skt_stats.tcp_input_time << ","
-                                  << p_sh_mem->skt_inst_arr[1].skt_stats.ip_output_time << ","
-                                  << p_sh_mem->skt_inst_arr[1].skt_stats.dequeue_packet_time << ",";
 
-          uint64_t empty_polls = 0;
-          for(int queue = 0; queue < NUM_OF_SUPPORTED_CQS; ++queue)
-            if(p_sh_mem->cq_inst_arr[queue].b_enabled)
-              empty_polls += p_sh_mem->cq_inst_arr[queue].cq_stats.n_rx_empty_cq_poll;
+          for(int queue = 0; queue < NUM_OF_SUPPORTED_CQS; ++queue) {
+              if(p_sh_mem->cq_inst_arr[queue].b_enabled) {
+                user_params.csv_stream 
+                                    << p_sh_mem->cq_inst_arr[queue].cq_stats.n_rx_polls << "," 
+                                    << p_sh_mem->cq_inst_arr[queue].cq_stats.n_rx_polls_with_ret << "," 
+                                    << p_sh_mem->cq_inst_arr[queue].cq_stats.n_rx_empty_cq_poll << ","
+                                    << p_sh_mem->cq_inst_arr[queue].cq_stats.poll_and_process_time << "," 
+                                    << p_sh_mem->cq_inst_arr[queue].cq_stats.empty_poll_time << "," 
+                                    << p_sh_mem->cq_inst_arr[queue].cq_stats.min_buffer_pool_address << ","
+                                      << p_sh_mem->cq_inst_arr[queue].cq_stats.max_buffer_pool_address << ",";
 
-          user_params.csv_stream  << empty_polls << ","
-                                  << p_sh_mem->cq_inst_arr[0].cq_stats.min_buffer_pool_address << "," 
-                                  << p_sh_mem->cq_inst_arr[0].cq_stats.max_buffer_pool_address << "," 
-                                  << p_sh_mem->ring_inst_arr[0].ring_stats.min_send_address << "," 
-                                  << p_sh_mem->ring_inst_arr[0].ring_stats.max_send_address << "," 
-                                  // << p_sh_mem->cq_inst_arr[0].cq_stats.n_buffer_pool_len << "," 
-                                  // << p_sh_mem->cq_inst_arr[0].cq_stats.n_rx_sw_queue_len << "," 
-                                  // << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_size << "," 
-                                  // << p_sh_mem->bpool_inst_arr[0].bpool_stats.n_buffer_pool_no_bufs << "," 
-                                  << std::endl;
+              }
+          }
+
+          for(int ring = 0; ring < NUM_OF_SUPPORTED_RINGS; ++ring) {
+              if(p_sh_mem->ring_inst_arr[ring].b_enabled) {
+                user_params.csv_stream << p_sh_mem->ring_inst_arr[ring].ring_stats.min_send_address << "," 
+                                       << p_sh_mem->ring_inst_arr[ring].ring_stats.max_send_address << "," ;
+              }
+          }
+
+          for(size_t skt = 0; skt < p_sh_mem->max_skt_inst_num; ++skt) {
+              if(p_sh_mem->skt_inst_arr[skt].b_enabled) {
+                user_params.csv_stream 
+                                    << p_sh_mem->skt_inst_arr[skt].skt_stats.tcp_input_time << ","
+                                    << p_sh_mem->skt_inst_arr[skt].skt_stats.ip_output_time << ","
+                                    << p_sh_mem->skt_inst_arr[skt].skt_stats.average_zc_buffer_time << ","
+                                    << p_sh_mem->skt_inst_arr[skt].skt_stats.buffers_used << ","
+                                    << p_sh_mem->skt_inst_arr[skt].skt_stats.dequeue_packet_time << ",";
+              }
+          }
+
+          user_params.csv_stream << std::endl;
         }
 
         switch (user_params.view_mode) {
