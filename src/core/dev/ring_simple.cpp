@@ -519,6 +519,13 @@ int ring_simple::wait_for_notification_and_process_element(int cq_channel_fd,
     return ret;
 }
 
+size_t ring_simple::get_rx_buffer_size_left()
+{
+    size_t ret = false;
+    RING_TRY_LOCK_RUN_AND_UPDATE_RET(m_lock_ring_rx, m_p_cq_mgr_rx->get_rx_buffer_size_left());
+    return ret;
+}
+
 bool ring_simple::reclaim_recv_buffers(descq_t *rx_reuse)
 {
     bool ret = false;

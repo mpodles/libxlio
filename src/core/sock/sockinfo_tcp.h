@@ -601,6 +601,7 @@ private:
     uint64_t m_n_pbufs_freed;
     // Map of buffers with their sizes and time until they were returned
     std::map<void*, std::pair<uint64_t, uint64_t>> m_buffers_usage;
+    FILE* _tcp_log_file;
 };
 typedef struct tcp_seg tcp_seg;
 

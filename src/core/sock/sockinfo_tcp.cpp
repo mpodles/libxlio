@@ -60,7 +60,10 @@
 #include "sockinfo_tcp.h"
 #include "tcp_seg_pool.h"
 #include "bind_no_port.h"
-#include "dpu_statistics.h"
+
+extern "C" {
+  #include "dpu_statistics.h"
+}
 
 #define UNLOCK_RET(_ret)                                                                           \
     unlock_tcp_con();                                                                              \
@@ -89,6 +92,7 @@ static std::set<uint16_t> unique_segments;
 tcp_timers_collection *g_tcp_timers_collection = NULL;
 thread_local thread_local_tcp_timers g_thread_local_tcp_timers;
 bind_no_port *g_bind_no_port = NULL;
+static int skt_id = 0;
 
 /*
  * The following socket options are inherited by a connected TCP socket from the listening socket:
@@ -186,7 +190,8 @@ inline int sockinfo_tcp::rx_wait(int &poll_count, bool blocking)
 
 inline int sockinfo_tcp::rx_wait_lockless(int &poll_count, bool blocking)
 {
-    return rx_wait_helper(poll_count, blocking);
+    int ret = rx_wait_helper(poll_count, blocking);
+    return ret;
 }
 
 inline void sockinfo_tcp::return_pending_rx_buffs()
@@ -398,6 +403,7 @@ sockinfo_tcp::sockinfo_tcp(int fd, int domain)
     }
     si_tcp_logdbg("TCP PCB FLAGS: 0x%x", m_pcb.flags);
     si_tcp_logfunc("done");
+    _tcp_log_file = fopen(("/var/log/sock_Tcp"+std::to_string(skt_id)+".log").c_str(),"wb");
 }
 
 sockinfo_tcp::~sockinfo_tcp()
@@ -802,9 +808,10 @@ unsigned sockinfo_tcp::tx_wait(int &err, bool blocking)
 {
     unsigned sz = tcp_sndbuf(&m_pcb);
     int poll_count = 0;
-    si_tcp_logfunc("sz = %d rx_count=%d", sz, m_n_rx_pkt_ready_list_count);
+    size_t size_left = m_p_rx_ring->get_rx_buffer_size_left();
+    si_tcp_logwarn("starting sz = %d rx_count=%d size_left=%d", sz, m_n_rx_pkt_ready_list_count, size_left);
     err = 0;
-    while (is_rts() && (sz = tcp_sndbuf(&m_pcb)) == 0) {
+    while (is_rts() && (sz = tcp_sndbuf(&m_pcb)) == 0 && size_left < 2*256*512) {
         err = rx_wait(poll_count, blocking);
         // AlexV:Avoid from going to sleep, for the blocked socket of course, since
         // progress engine may consume an arrived credit and it will not wakeup the
@@ -823,6 +830,7 @@ unsigned sockinfo_tcp::tx_wait(int &err, bool blocking)
             tcp_output(&m_pcb);
             poll_count = 0;
         }
+      size_left = m_p_rx_ring->get_rx_buffer_size_left();
     }
     si_tcp_logfunc("end sz=%d rx_count=%d", sz, m_n_rx_pkt_ready_list_count);
     return sz;
@@ -990,7 +998,6 @@ retry_is_ready:
 
         return -1;
     }
-    si_tcp_logfunc("tx: iov=%p niovs=%d", p_iov, sz_iov);
 
     if (m_sysvar_rx_poll_on_tx_tcp) {
         rx_wait_helper(poll_count, false);
@@ -1023,7 +1030,6 @@ retry_is_ready:
             (tx_arg.priv.attr == PBUF_DESC_MKEY ? (struct xlio_pd_key *)tx_arg.priv.map : NULL);
     }
 
-    si_tcp_logfunc("tx: iov=%p niovs=%zu", p_iov, sz_iov);
 
     size_t total_iov_len =
         std::accumulate(&p_iov[0], &p_iov[sz_iov], 0U,
@@ -1038,9 +1044,28 @@ retry_is_ready:
         return -1;
     }
 
+    size_t size_left = m_p_rx_ring->get_rx_buffer_size_left();
+
+    struct timespec current_time;
+    gettime(&current_time);
+
+    int wrote = 0;
+    wrote += fwrite("sending", sizeof("sending")-1, 1, _tcp_log_file);
+    wrote += fwrite(&size_left, sizeof(size_t), 1, _tcp_log_file);
+    uint64_t timestamp = (SEC_TO_MICRO(current_time.tv_sec) + NANO_TO_MICRO(current_time.tv_nsec));
+    // cq_logerr("start buffer %p timestamp %ud",buff_wqe->p_buffer, timestamp);
+
+    wrote += fwrite(&timestamp, sizeof(uint64_t), 1, _tcp_log_file);
+    if (wrote < 3)
+      si_tcp_logerr("error writing tcp tx log");
+
     int total_tx = 0;
     __off64_t file_offset = 0;
     bool block_this_run = BLOCK_THIS_RUN(m_b_blocking, __flags);
+    si_tcp_logwarn("tx: iov=%p niovs=%zu, size of receive buffers=%ud", p_iov, sz_iov, size_left);
+    // This doesn't consider the other headers
+    if(sz_iov * (8 + 16 + 4096) > size_left)
+      si_tcp_logerr("not enough buffer to receive");
     for (size_t i = 0; i < sz_iov; i++) {
         si_tcp_logwarn("iov:%d base=%p len=%d", i, p_iov[i].iov_base, p_iov[i].iov_len);
         if (unlikely(!p_iov[i].iov_base)) {
@@ -1059,6 +1084,10 @@ retry_is_ready:
         unsigned pos = 0;
         while (pos < p_iov[i].iov_len) {
             unsigned tx_size = tcp_sndbuf(&m_pcb);
+            if(size_left < 2*256*512) {
+              si_tcp_logerr("size_left=%d blocking=%b", size_left, block_this_run);
+              tx_size=0;
+            }
 
             /* Process a case when space is not available at the sending socket
              * to hold the message to be transmitted
@@ -2551,17 +2580,23 @@ bool sockinfo_tcp::rx_input_cb(mem_buf_desc_t *p_rx_pkt_mem_buf_desc_info, void 
 
 
     // measurement_t measurement;
-    // if(m_socket_stats.counters.n_rx_packets%1000 == 0) {
+    // bool do_measure =  m_socket_stats.counters.n_rx_packets%1000 == 0;
+    // int old_errno = errno;
+    // if(do_measure) {
     //   PERF_START_MEASUREMENT(measure_cycle_count);
     // }
 
     gettime(&start);
+    // L3_level_tcp_input((pbuf *)p_rx_pkt_mem_buf_desc_info, pcb);
+    // MEASURE_STATS_EVERY_N_START(10'000);
     L3_level_tcp_input((pbuf *)p_rx_pkt_mem_buf_desc_info, pcb);
+    // MEASURE_STATS_EVERY_N_END(10'000);
     gettime(&end);
-    // if(m_socket_stats.counters.n_rx_packets%1000 == 0) {
-    //   PERF_STOP_MEASUREMENT(measure_cycle_count);
+    // if(do_measure) {
     //   PERF_READ_MEASUREMENT(measure_cycle_count, &measurement, sizeof(measurement_t));
+    //   print_perf_measurements(&measurement);
     // }
+    // errno = old_errno;
 
 
     m_socket_stats.tcp_input_time += TIME_DIFF_in_MICRO(start, end);

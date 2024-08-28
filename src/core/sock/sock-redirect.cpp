@@ -1402,7 +1402,11 @@ extern "C" EXPORT_SYMBOL ssize_t sendmsg(int __fd, __const struct msghdr *__msg,
 
         tx_arg.opcode = TX_SENDMSG;
         tx_arg.attr.iov = __msg->msg_iov;
+        // Assume 4KB responses to requests
         tx_arg.attr.sz_iov = (ssize_t)__msg->msg_iovlen;
+        srdr_logfunc("msg iov_count %d", __msg->msg_iovlen);
+        for (size_t i=0; i< __msg->msg_iovlen; ++i)
+          srdr_logfunc("msg iov %d size %d", i, __msg->msg_iov[i].iov_len);
         tx_arg.attr.flags = __flags;
         tx_arg.attr.addr = (struct sockaddr *)(__CONST_SOCKADDR_ARG)__msg->msg_name;
         tx_arg.attr.len = (socklen_t)__msg->msg_namelen;

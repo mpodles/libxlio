@@ -40,11 +40,15 @@
 #include "qp_mgr.h"
 #include "qp_mgr_eth_mlx5.h"
 #include "ring_simple.h"
-#include "dpu_statistics.h"
 #include <cinttypes>
 #include <utility>
+#include <stdio.h>
+#include <string>
 #include <algorithm> // for minmax
 
+extern "C" {
+  #include "dpu_statistics.h"
+}
 #define MODULE_NAME "cq_mgr_mlx5_strq"
 
 #define cq_logfunc    __log_info_func
@@ -63,7 +67,7 @@
 
 // static void* _min_buffer = (void*)0xFFFFFFFFFFFFFFFF;
 // static void* _max_buffer = NULL;
-
+static int cq_id = 0;
 cq_mgr_mlx5_strq::cq_mgr_mlx5_strq(ring_simple *p_ring, ib_ctx_handler *p_ib_ctx_handler,
                                    uint32_t cq_size, uint32_t stride_size_bytes,
                                    uint32_t strides_num,
@@ -75,6 +79,9 @@ cq_mgr_mlx5_strq::cq_mgr_mlx5_strq(ring_simple *p_ring, ib_ctx_handler *p_ib_ctx
     , _strides_num(strides_num)
     , _wqe_buff_size_bytes(strides_num * stride_size_bytes)
 {
+
+    _strq_log_file = fopen(("/var/log/strq"+std::to_string(cq_id)+".log").c_str(),"wb");
+    cq_id+=1;
     cq_logfunc("");
     m_n_sysvar_rx_prefetch_bytes_before_poll =
         std::min(m_n_sysvar_rx_prefetch_bytes_before_poll, stride_size_bytes);
@@ -87,16 +94,25 @@ cq_mgr_mlx5_strq::~cq_mgr_mlx5_strq()
     cq_logfunc("");
     cq_logdbg("destroying CQ STRQ");
 
-    int buffer_size = 12000;
-    char buffers[buffer_size];
-    int cx = 0;
-    for(const auto& buffer: _unique_buffers)
-      if (cx>=0 && cx<buffer_size)      // check returned value
-        cx += snprintf ( buffers +cx, buffer_size, "[%p, %lu],\n", buffer.first, buffer.second);
+    // int buffer_size = 12000;
+    // char buffers[buffer_size];
+    // int cx = 0;
+    // for(const auto& buffer: _unique_buffers)
+    //   if (cx>=0 && cx<buffer_size)      // check returned value
+    //     cx += snprintf ( buffers +cx, buffer_size, "[%p, %lu],\n", buffer.first, buffer.second);
+    //
+    // if(_unique_buffers.size())
+    //   cq_logerr("Unique buffers used\n %s", buffers);
 
-    if(_unique_buffers.size())
-      cq_logerr("Unique buffers used\n %s", buffers);
-
+    // memset(buffers, 0, buffer_size);
+    // cx = 0;
+    // for(const auto &buffer: m_buffers_usage)
+    //   if (cx>=0 && cx<buffer_size)      // check returned value
+    //     cx += snprintf ( buffers +cx, buffer_size, "[%p, time:%lu, len:%lu],\n", buffer.first, buffer.second.first, buffer.second.second);
+    //
+    // if(m_buffers_usage.size())
+    //   cq_logerr("Buffers fetched\n %s", buffers);
+    //
     if (m_rx_buffs_rdy_for_free_head) {
         reclaim_recv_buffer_helper(m_rx_buffs_rdy_for_free_head);
         m_rx_buffs_rdy_for_free_head = m_rx_buffs_rdy_for_free_tail = nullptr;
@@ -117,6 +133,7 @@ cq_mgr_mlx5_strq::~cq_mgr_mlx5_strq()
     }
 
     g_buffer_pool_rx_stride->put_buffers_thread_safe(&_stride_cache, _stride_cache.size());
+    fclose(_strq_log_file);
 }
 
 mem_buf_desc_t *cq_mgr_mlx5_strq::next_stride()
@@ -204,7 +221,7 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
             m_p_cq_stat->empty_poll_time += TIME_DIFF_in_MICRO(start, end);
             return NULL;
         }
-        _unique_buffers.insert(std::make_pair(m_rx_hot_buffer->p_buffer, m_rx_hot_buffer->sz_data));
+        // _unique_buffers.insert(std::make_pair(m_rx_hot_buffer->p_buffer, m_rx_hot_buffer->sz_data));
         m_p_cq_stat->max_buffer_pool_address = std::max(m_p_cq_stat->max_buffer_pool_address, (uint64_t)m_rx_hot_buffer->p_buffer);
         m_p_cq_stat->min_buffer_pool_address = std::min(m_p_cq_stat->min_buffer_pool_address, (uint64_t)m_rx_hot_buffer->p_buffer);
     }
@@ -378,19 +395,25 @@ inline bool cq_mgr_mlx5_strq::strq_cqe_to_mem_buff_desc(struct xlio_mlx5_cqe *cq
     //            (host_byte_cnt & 0x0000FFFFU), _hot_buffer_stride->rx.strides_num,
     //            _current_wqe_consumed_bytes, m_rx_hot_buffer, m_rx_hot_buffer->sz_buffer);
 
-    cq_logwarn("\n"
-               "STRQ CQE: bytes in CQE: %" PRIu32 ", \n"
-               "STRIDES in CQE hot_buffer_stride.strides: %" PRIu16 "\n" 
-               "Consumed-Bytes: %" PRIu32 "/%" PRIu32 "\n"
-               "m_rx_hot_buffer: %p\n"
-               "hot_buffer_stride: %p\n"
-               "is filler: %s\n",
-               (host_byte_cnt & 0x0000FFFFU),
-               _hot_buffer_stride->rx.strides_num,
-               _current_wqe_consumed_bytes, _wqe_buff_size_bytes,
-               m_rx_hot_buffer->p_buffer,
-               _hot_buffer_stride,
-               is_filler ? "yes" : "no");
+    cq_logwarn("Reduing posted buffer size from %ul to %ul", m_posted_buffer_size_left, m_posted_buffer_size_left - _hot_buffer_stride->sz_buffer);                
+    m_posted_buffer_size_left -= _hot_buffer_stride->sz_buffer;
+    if(m_posted_buffer_size_left == 0) {
+
+      cq_logerr("Posted size dropped to zero");                
+      }
+    // cq_logerr("\n"
+    //            "STRQ CQE: bytes in CQE: %" PRIu32 ", \n"
+    //            "STRIDES in CQE hot_buffer_stride.strides: %" PRIu16 "\n" 
+    //            "Consumed-Bytes: %" PRIu32 "/%" PRIu32 "\n"
+    //            "m_rx_hot_buffer: %p\n"
+    //            "hot_buffer_stride: %p\n"
+    //            "is filler: %s\n",
+    //            (host_byte_cnt & 0x0000FFFFU),
+    //            _hot_buffer_stride->rx.strides_num,
+    //            _current_wqe_consumed_bytes, _wqe_buff_size_bytes,
+    //            m_rx_hot_buffer->p_buffer,
+    //            _hot_buffer_stride,
+    //            is_filler ? "yes" : "no");
     // vlog_print_buffer(VLOG_FINE, "STRQ CQE. Data: ", "\n",
     //	reinterpret_cast<const char*>(_hot_buffer_stride->p_buffer), min(112,
     // static_cast<int>(_hot_buffer_stride->sz_data)));
@@ -562,6 +585,22 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
         
         if(buff_wqe) {
           ++m_qp_rec.debt;
+
+          if(true) { 
+            struct timespec start_occupied;
+            gettime(&start_occupied);
+            int wrote = 0;
+            wrote += fwrite("start", sizeof("start")-1, 1, _strq_log_file);
+            wrote += fwrite(&buff_wqe->p_buffer, sizeof(void *), 1, _strq_log_file);
+            uint64_t timestamp = (SEC_TO_MICRO(start_occupied.tv_sec) + NANO_TO_MICRO(start_occupied.tv_nsec));
+            // cq_logerr("start buffer %p timestamp %ud",buff_wqe->p_buffer, timestamp);
+
+            wrote += fwrite(&timestamp, sizeof(uint64_t), 1, _strq_log_file);
+            if (wrote< 3)
+              cq_logerr("error writing start");
+            
+            // m_buffers_usage[buff_wqe->p_buffer] = std::make_pair(SEC_TO_MICRO(start_occupied.tv_sec) + NANO_TO_MICRO(start_occupied.tv_nsec), buff_wqe->sz_data);
+          }
           m_qp_rec.qp->m_num_posted_wr--;
         }
 
@@ -648,6 +687,22 @@ void cq_mgr_mlx5_strq::reclaim_recv_buffer_helper(mem_buf_desc_t *buff)
                 if (buff->rx.strides_num == rwqe->add_ref_count(-buff->rx.strides_num)) {
                     // Is last stride.
                     cq_mgr::reclaim_recv_buffer_helper(rwqe);
+                    struct timespec end_occupied;
+                    gettime(&end_occupied);
+                    int wrote = 0;
+                    wrote += fwrite("end", sizeof("end")-1, 1, _strq_log_file);
+                    wrote += fwrite(&rwqe->p_buffer, sizeof(void *), 1, _strq_log_file);
+                    uint64_t timestamp = (SEC_TO_MICRO(end_occupied.tv_sec) + NANO_TO_MICRO(end_occupied.tv_nsec));
+                    wrote += fwrite(&timestamp, sizeof(uint64_t), 1, _strq_log_file);
+                    // cq_logerr("end buffer %p timestamp %ud", rwqe->p_buffer, timestamp);
+                    if (wrote < 3)
+                      cq_logerr("error writing end");
+            
+                    
+                    // int64_t finishing_time = SEC_TO_MICRO(end_occupied.tv_sec) + NANO_TO_MICRO(end_occupied.tv_nsec);
+                    // const std::pair<uint64_t, uint64_t> &buffer = m_buffers_usage[(void*)(rwqe->p_buffer)];
+                    // m_buffers_usage[rwqe->p_buffer] = std::make_pair(finishing_time - buffer.first, buffer.second);
+
                 }
 
                 VLIST_DEBUG_CQ_MGR_PRINT_ERROR_IS_MEMBER;

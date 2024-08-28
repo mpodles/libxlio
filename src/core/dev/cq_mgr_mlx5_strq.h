@@ -36,6 +36,7 @@
 #include <config.h>
 #include <vector>
 #include <set>
+#include <map>
 #include "cq_mgr_mlx5.h"
 
 class cq_mgr_mlx5_strq : public cq_mgr_mlx5 {
@@ -79,6 +80,8 @@ private:
     const uint32_t _wqe_buff_size_bytes;
     uint32_t _current_wqe_consumed_bytes = 0U;
     std::set<std::pair<void*, size_t>> _unique_buffers;
+    std::map<void*, std::pair<uint64_t, uint64_t>> m_buffers_usage;
+    FILE* _strq_log_file;
 };
 
 #endif

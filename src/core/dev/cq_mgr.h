@@ -166,6 +166,11 @@ public:
 
     virtual uint32_t clean_cq();
 
+    size_t get_rx_buffer_size_left() { return m_posted_buffer_size_left;}
+    size_t get_rx_buffer_reservation() { return m_reserved_buffer_size;}
+    size_t reserve_buffer_space(size_t reservation) { m_reserved_buffer_size += reservation; return m_reserved_buffer_size; }
+    size_t free_buffer_reservation(size_t reservation) { m_reserved_buffer_size -= reservation; return m_reserved_buffer_size; }
+
     bool reclaim_recv_buffers(descq_t *rx_reuse);
     bool reclaim_recv_buffers(mem_buf_desc_t *rx_reuse_lst);
     bool reclaim_recv_buffers_no_lock(mem_buf_desc_t *rx_reuse_lst);
@@ -184,7 +189,7 @@ protected:
      * Poll the CQ that is managed by this object
      * @p_wce pointer to array where to save the wce in
      * @num_entries Size of the p_wce (max number of wce to poll at once)
-     * @p_cq_poll_sn global unique wce id that maps last wce polled
+     * @p_cq_poll_sn global m_posted_buffer_size_leftunique wce id that maps last wce polled
      * @return Number of successfully polled wce
      */
     int poll(xlio_ibv_wc *p_wce, int num_entries, uint64_t *p_cq_poll_sn);
@@ -241,6 +246,9 @@ protected:
      */
     mem_buf_desc_t *m_rx_buffs_rdy_for_free_head;
     mem_buf_desc_t *m_rx_buffs_rdy_for_free_tail;
+    size_t m_occupied_buffer;
+    size_t m_posted_buffer_size_left;
+    size_t m_reserved_buffer_size;
 
 private:
     struct ibv_comp_channel *m_comp_event_channel;

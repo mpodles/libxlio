@@ -91,6 +91,7 @@ public:
                                            int n_num_mem_bufs = 1) = 0;
     virtual int mem_buf_tx_release(mem_buf_desc_t *p_mem_buf_desc_list, bool b_accounting,
                                    bool trylock = false) = 0;
+    virtual size_t get_rx_buffer_size_left() { return 0xffffffffffffffff; };
     virtual void mem_buf_rx_release(mem_buf_desc_t *p_mem_buf_desc)
     {
         buffer_pool::free_rx_lwip_pbuf_custom(&p_mem_buf_desc->lwip_pbuf.pbuf);
