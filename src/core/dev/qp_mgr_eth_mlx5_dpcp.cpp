@@ -309,7 +309,7 @@ void qp_mgr_eth_mlx5_dpcp::post_recv_buffer(mem_buf_desc_t *p_mem_buf_desc)
     m_ibv_rx_sg_array[index].length = p_mem_buf_desc->sz_buffer;
     m_ibv_rx_sg_array[index].lkey = p_mem_buf_desc->lkey;
 
-    qp_logwarn("Posted recv buffer:%p at sg_array index: %d" PRIu32, (void *)p_mem_buf_desc->p_buffer, index);
+    qp_loginfo("Posted recv buffer:%p at sg_array index: %d" PRIu32, (void *)p_mem_buf_desc->p_buffer, index);
     post_recv_buffer_rq(p_mem_buf_desc);
 }
 

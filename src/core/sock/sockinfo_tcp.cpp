@@ -37,6 +37,8 @@
 #include <netinet/tcp.h>
 #include <vector>
 #include <set>
+#include <map>
+#include <thread>
 #include <algorithm> // For MAX
 #include <utility>
 #include "util/if.h"
@@ -190,7 +192,9 @@ inline int sockinfo_tcp::rx_wait(int &poll_count, bool blocking)
 
 inline int sockinfo_tcp::rx_wait_lockless(int &poll_count, bool blocking)
 {
+    measure_start(0);
     int ret = rx_wait_helper(poll_count, blocking);
+    measure_finish(0);
     return ret;
 }
 
@@ -476,15 +480,15 @@ sockinfo_tcp::~sockinfo_tcp()
         g_p_agent->unregister_cb((agent_cb_t)&sockinfo_tcp::put_agent_msg, (void *)this);
     }
 
-    int buffer_size = 12000;
-    char buffers[buffer_size];
-    int cx = 0;
-    for(const auto &buffer: m_buffers_usage)
-      if (cx>=0 && cx<buffer_size)      // check returned value
-        cx += snprintf ( buffers +cx, buffer_size, "[%p, time:%lu, len:%lu],\n", buffer.first, buffer.second.first, buffer.second.second);
-
-    if(m_buffers_usage.size())
-      si_tcp_logerr("Buffers fetched\n %s", buffers);
+    // int buffer_size = 12000;
+    // char buffers[buffer_size];
+    // int cx = 0;
+    // for(const auto &buffer: m_buffers_usage)
+    //   if (cx>=0 && cx<buffer_size)      // check returned value
+    //     cx += snprintf ( buffers +cx, buffer_size, "[%p, time:%lu, len:%lu],\n", buffer.first, buffer.second.first, buffer.second.second);
+    //
+    // if(m_buffers_usage.size())
+    //   si_tcp_logerr("Buffers fetched\n %s", buffers);
 
     si_tcp_logdbg("sock closed");
 }
@@ -772,6 +776,7 @@ void sockinfo_tcp::tcp_timer()
 
     return_pending_rx_buffs();
     return_pending_tx_buffs();
+    // g_buffer_pool_rx_rwqe->print_report(VLOG_WARNING);
 }
 
 bool sockinfo_tcp::prepare_dst_to_send(bool is_accepted_socket /* = false */)
@@ -809,7 +814,7 @@ unsigned sockinfo_tcp::tx_wait(int &err, bool blocking)
     unsigned sz = tcp_sndbuf(&m_pcb);
     int poll_count = 0;
     size_t size_left = m_p_rx_ring->get_rx_buffer_size_left();
-    si_tcp_logwarn("starting sz = %d rx_count=%d size_left=%d", sz, m_n_rx_pkt_ready_list_count, size_left);
+    si_tcp_logwarn("tx waiting starting sz = %d rx_count=%d size_left=%d", sz, m_n_rx_pkt_ready_list_count, size_left);
     err = 0;
     while (is_rts() && (sz = tcp_sndbuf(&m_pcb)) == 0 && size_left < 2*256*512) {
         err = rx_wait(poll_count, blocking);
@@ -922,7 +927,11 @@ void sockinfo_tcp::put_agent_msg(void *arg)
 
 ssize_t sockinfo_tcp::tx(xlio_tx_call_attr_t &tx_arg)
 {
-    return m_ops->tx(tx_arg);
+    ssize_t result;
+    measure_start(1);
+    result = m_ops->tx(tx_arg);
+    measure_finish(1);
+    return result;
 }
 
 static inline bool cannot_do_requested_partial_write(const tcp_pcb &pcb,
@@ -1046,28 +1055,15 @@ retry_is_ready:
 
     size_t size_left = m_p_rx_ring->get_rx_buffer_size_left();
 
-    struct timespec current_time;
-    gettime(&current_time);
-
-    int wrote = 0;
-    wrote += fwrite("sending", sizeof("sending")-1, 1, _tcp_log_file);
-    wrote += fwrite(&size_left, sizeof(size_t), 1, _tcp_log_file);
-    uint64_t timestamp = (SEC_TO_MICRO(current_time.tv_sec) + NANO_TO_MICRO(current_time.tv_nsec));
-    // cq_logerr("start buffer %p timestamp %ud",buff_wqe->p_buffer, timestamp);
-
-    wrote += fwrite(&timestamp, sizeof(uint64_t), 1, _tcp_log_file);
-    if (wrote < 3)
-      si_tcp_logerr("error writing tcp tx log");
-
     int total_tx = 0;
     __off64_t file_offset = 0;
     bool block_this_run = BLOCK_THIS_RUN(m_b_blocking, __flags);
     si_tcp_logwarn("tx: iov=%p niovs=%zu, size of receive buffers=%ud", p_iov, sz_iov, size_left);
     // This doesn't consider the other headers
-    if(sz_iov * (8 + 16 + 4096) > size_left)
-      si_tcp_logerr("not enough buffer to receive");
+    // if(sz_iov * (8 + 16 + 4096) > size_left)
+    //   si_tcp_logerr("not enough buffer to receive");
     for (size_t i = 0; i < sz_iov; i++) {
-        si_tcp_logwarn("iov:%d base=%p len=%d", i, p_iov[i].iov_base, p_iov[i].iov_len);
+        si_tcp_loginfo("iov:%d base=%p len=%d", i, p_iov[i].iov_base, p_iov[i].iov_len);
         if (unlikely(!p_iov[i].iov_base)) {
             continue;
         }
@@ -1084,10 +1080,10 @@ retry_is_ready:
         unsigned pos = 0;
         while (pos < p_iov[i].iov_len) {
             unsigned tx_size = tcp_sndbuf(&m_pcb);
-            if(size_left < 2*256*512) {
-              si_tcp_logerr("size_left=%d blocking=%b", size_left, block_this_run);
-              tx_size=0;
-            }
+            // if(size_left < 2*256*512) {
+            //   si_tcp_logerr("size_left=%d blocking=%b", size_left, block_this_run);
+            //   tx_size=0;
+            // }
 
             /* Process a case when space is not available at the sending socket
              * to hold the message to be transmitted
@@ -1168,7 +1164,7 @@ retry_is_ready:
                 }
             }
 
-            si_tcp_logwarn("tcp_write in retry_write: ptr: %p, size: %d", tx_ptr, tx_size);
+            si_tcp_loginfo("tcp_write in retry_write: ptr: %p, size: %d", tx_ptr, tx_size);
             err = tcp_write(&m_pcb, tx_ptr, tx_size, apiflags, &tx_arg.priv);
             if (unlikely(err != ERR_OK)) {
                 if (unlikely(err == ERR_CONN)) { // happens when remote drops during big write
@@ -1216,7 +1212,8 @@ retry_is_ready:
         }
     }
 done:
-    si_tcp_logwarn("reached tcp_output with m_pcb: rcv_wnd:%d, rcv_ann_wnd:%d", m_pcb.rcv_wnd, m_pcb.rcv_ann_wnd);
+    si_tcp_loginfo("reached tcp_output with m_pcb: rcv_wnd:%d, rcv_ann_wnd:%d",
+                   m_pcb.rcv_wnd, m_pcb.rcv_ann_wnd);
     tcp_output(&m_pcb); // force data out
 
     if (unlikely(is_dummy)) {
@@ -2065,7 +2062,7 @@ inline void sockinfo_tcp::rx_lwip_process_chained_pbufs(pbuf *p)
 
 inline void sockinfo_tcp::save_packet_info_in_ready_list(pbuf *p)
 {
-    si_tcp_logwarn("SAVING pbuf=%p to m_rx_pkt_ready_list\n");
+    si_tcp_loginfo("SAVING pbuf=%p to m_rx_pkt_ready_list\n");
     m_rx_pkt_ready_list.push_back(reinterpret_cast<mem_buf_desc_t *>(p));
     m_n_rx_pkt_ready_list_count++;
     m_rx_ready_byte_count += p->tot_len;
@@ -2348,7 +2345,8 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
         }
     }
 
-    si_tcp_logwarn("rx: iov=%p niovs=%d", p_iov, sz_iov);
+    // if (in_flags & 0x4000001)
+    //   si_tcp_logerr("rx: iov=%p niovs=%d", p_iov, sz_iov);
 
     /* poll rx queue till we have something */
     lock_tcp_con();
@@ -2359,6 +2357,8 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
      */
     if (__msg && __msg->msg_control && (in_flags & MSG_ERRQUEUE)) {
         if (m_error_queue.empty()) {
+            // if (in_flags & 0x4000001)
+            si_tcp_logwarn("msg controler error");
             errno = EAGAIN;
             unlock_tcp_con();
             return -1;
@@ -2371,7 +2371,7 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
       ++iter;
     }
 
-    si_tcp_logwarn("Going into return buffers with %s and will%s return %d buffers stored in m_rx_reuse_buff",
+    si_tcp_loginfo("Going into return buffers with %s and will%s return %d buffers stored in m_rx_reuse_buff",
                   m_p_rx_ring ? "one ring" : "map of rings",
                   !m_rx_reuse_buf_postponed ? " NOT": "",
                   m_rx_reuse_buff.n_buff_num
@@ -2380,10 +2380,11 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
     unlock_tcp_con();
 
     while (m_rx_ready_byte_count < total_iov_sz) {
-        si_tcp_logwarn("Going thorugh RX loop: m_rx_ready_byte_count:%d < total_iov_sz=%d %s", m_rx_ready_byte_count, total_iov_sz, block_this_run ? "BLOCKING" : "");
+        si_tcp_loginfo("Going thorugh RX loop: m_rx_ready_byte_count:%d < total_iov_sz=%d %s", m_rx_ready_byte_count, total_iov_sz, block_this_run ? "BLOCKING" : "");
         if (unlikely(g_b_exit || !is_rtr() || (m_skip_cq_poll_in_rx && (errno = EAGAIN)) ||
                      (rx_wait_lockless(poll_count, block_this_run) < 0))) {
             int ret = handle_rx_error(block_this_run);
+            // si_tcp_logerr("Error during loop with ret %d", ret);
             if (__msg && ret == 0) {
                 /* We don't return a control message in this case. */
                 __msg->msg_controllen = 0;
@@ -2394,11 +2395,11 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
 
     lock_tcp_con();
 
-    si_tcp_logwarn("After RX loop there is something in m_rx_pkt_ready_list: amount:%d front:%p", m_n_rx_pkt_ready_list_count,
+    si_tcp_loginfo("After RX loop there is something in m_rx_pkt_ready_list: amount:%d front:%p", m_n_rx_pkt_ready_list_count,
                    m_rx_pkt_ready_list.front());
 
     bool process_cmsg = true;
-    if (total_iov_sz > 0) {
+    if (total_iov_sz > 0 && m_n_rx_pkt_ready_list_count > 0) {
 #ifdef DEFINED_UTLS
         /*
          * kTLS API doesn't require to set TLS_GET_RECORD_TYPE control
@@ -2420,7 +2421,7 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
         }
 #endif /* DEFINED_UTLS */
 
-        si_tcp_logwarn("Going into dequeue_packet");
+        // si_tcp_logerr("Going into dequeue_packet because pkt_Ready_list %d", m_n_rx_pkt_ready_list_count);
         struct timespec start, end;
         gettime(&start);
         total_rx = dequeue_packet(p_iov, sz_iov, __from, __fromlen, in_flags, &out_flags);
@@ -2428,6 +2429,7 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
 
         m_socket_stats.dequeue_packet_time += TIME_DIFF_in_MICRO(start, end);
         if (total_rx < 0) {
+            si_tcp_logerr("dqeueued %d, error %d", total_rx, errno);
             unlock_tcp_con();
             return total_rx;
         }
@@ -2576,27 +2578,10 @@ bool sockinfo_tcp::rx_input_cb(mem_buf_desc_t *p_rx_pkt_mem_buf_desc_info, void 
     sock->m_xlio_thr = p_rx_pkt_mem_buf_desc_info->rx.is_xlio_thr;
 
     struct timespec start, end;
-    // prepare_perf_measurements();
-
-
-    // measurement_t measurement;
-    // bool do_measure =  m_socket_stats.counters.n_rx_packets%1000 == 0;
-    // int old_errno = errno;
-    // if(do_measure) {
-    //   PERF_START_MEASUREMENT(measure_cycle_count);
-    // }
 
     gettime(&start);
-    // L3_level_tcp_input((pbuf *)p_rx_pkt_mem_buf_desc_info, pcb);
-    // MEASURE_STATS_EVERY_N_START(10'000);
     L3_level_tcp_input((pbuf *)p_rx_pkt_mem_buf_desc_info, pcb);
-    // MEASURE_STATS_EVERY_N_END(10'000);
     gettime(&end);
-    // if(do_measure) {
-    //   PERF_READ_MEASUREMENT(measure_cycle_count, &measurement, sizeof(measurement_t));
-    //   print_perf_measurements(&measurement);
-    // }
-    // errno = old_errno;
 
 
     m_socket_stats.tcp_input_time += TIME_DIFF_in_MICRO(start, end);
@@ -5348,6 +5333,7 @@ int sockinfo_tcp::zero_copy_rx(iovec *p_iov, mem_buf_desc_t *pdesc, int *p_flags
     // Make sure there is enough room for the header
     if (len < 0) {
         errno = ENOBUFS;
+        si_tcp_logerr("zero copy rx no bufs");
         return -1;
     }
 

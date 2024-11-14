@@ -166,10 +166,7 @@ public:
 
     virtual uint32_t clean_cq();
 
-    size_t get_rx_buffer_size_left() { return m_posted_buffer_size_left;}
-    size_t get_rx_buffer_reservation() { return m_reserved_buffer_size;}
-    size_t reserve_buffer_space(size_t reservation) { m_reserved_buffer_size += reservation; return m_reserved_buffer_size; }
-    size_t free_buffer_reservation(size_t reservation) { m_reserved_buffer_size -= reservation; return m_reserved_buffer_size; }
+    size_t get_rx_buffer_size_left();
 
     bool reclaim_recv_buffers(descq_t *rx_reuse);
     bool reclaim_recv_buffers(mem_buf_desc_t *rx_reuse_lst);
@@ -246,9 +243,6 @@ protected:
      */
     mem_buf_desc_t *m_rx_buffs_rdy_for_free_head;
     mem_buf_desc_t *m_rx_buffs_rdy_for_free_tail;
-    size_t m_occupied_buffer;
-    size_t m_posted_buffer_size_left;
-    size_t m_reserved_buffer_size;
 
 private:
     struct ibv_comp_channel *m_comp_event_channel;

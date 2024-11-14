@@ -35,6 +35,9 @@
 #include "mem_desc.h"
 #include <netinet/tcp.h>
 
+extern "C" {
+  #include "dpu_statistics.h"
+}
 #define MODULE_NAME "dst_tcp"
 
 #define dst_tcp_logpanic   __log_panic

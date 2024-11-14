@@ -592,7 +592,7 @@ bool ring_slave::rx_process_buffer(mem_buf_desc_t *p_rx_wc_buf_desc, void *pv_fd
     ++m_p_ring_stat->n_rx_pkt_count;
 
     // This is an internal function (within ring and 'friends'). No need for lock mechanism.
-    ring_logfuncall("Received packet flow_tag_id: %d", p_rx_wc_buf_desc->rx.flow_tag_id);
+    ring_logwarn("Received packet flow_tag_id: %d", p_rx_wc_buf_desc->rx.flow_tag_id);
     if (likely(m_flow_tag_enabled && p_rx_wc_buf_desc->rx.flow_tag_id &&
                p_rx_wc_buf_desc->rx.flow_tag_id != FLOW_TAG_MASK &&
                !p_rx_wc_buf_desc->rx.is_sw_csum_need)) {
@@ -639,7 +639,7 @@ bool ring_slave::rx_process_buffer(mem_buf_desc_t *p_rx_wc_buf_desc, void *pv_fd
             // Remove ethernet padding from the data size
             p_rx_wc_buf_desc->sz_data = transport_header_len + ip_hdr_len + ip_payload_len;
 
-            ring_logfunc("FAST PATH Rx packet info: transport_header_len: %d, IP_header_len: %d L3 "
+            ring_loginfo("FAST PATH Rx packet info: transport_header_len: %d, IP_header_len: %d L3 "
                          "proto: %d flow_tag_id: %d",
                          transport_header_len, ip_hdr_len, protocol,
                          p_rx_wc_buf_desc->rx.flow_tag_id);
@@ -661,7 +661,7 @@ bool ring_slave::rx_process_buffer(mem_buf_desc_t *p_rx_wc_buf_desc, void *pv_fd
                 p_rx_wc_buf_desc->rx.n_transport_header_len = transport_header_len;
                 p_rx_wc_buf_desc->rx.n_frags = 1;
 
-                ring_logfunc("FAST PATH Rx TCP segment info: src_port=%d, dst_port=%d, "
+                ring_logwarn("FAST PATH Rx TCP segment info: src_port=%d, dst_port=%d, "
                              "flags='%s%s%s%s%s%s' seq=%u, ack=%u, win=%u, payload_sz=%u",
                              ntohs(p_tcp_h->source), ntohs(p_tcp_h->dest), p_tcp_h->urg ? "U" : "",
                              p_tcp_h->ack ? "A" : "", p_tcp_h->psh ? "P" : "",
@@ -669,6 +669,7 @@ bool ring_slave::rx_process_buffer(mem_buf_desc_t *p_rx_wc_buf_desc, void *pv_fd
                              p_tcp_h->fin ? "F" : "", ntohl(p_tcp_h->seq), ntohl(p_tcp_h->ack_seq),
                              ntohs(p_tcp_h->window), p_rx_wc_buf_desc->rx.sz_payload);
 
+                // g_buffer_pool_rx_rwqe->print_report(VLOG_DEBUG);
                 return si->rfs_ptr->rx_dispatch_packet(p_rx_wc_buf_desc, pv_fd_ready_array);
             }
 
@@ -1065,7 +1066,7 @@ bool steering_handler<KEY4T, KEY2T, HDR>::rx_process_buffer_no_flow_id(
         }
 
         size_t sz_payload = payload_len - p_tcp_h->doff * 4;
-        ring_logfunc("Rx TCP segment info: src_port=%" PRIu16 ", dst_port=%" PRIu16
+        ring_logwarn("Rx TCP segment info: src_port=%" PRIu16 ", dst_port=%" PRIu16
                      ", flags='%s%s%s%s%s%s' seq=%u, ack=%u, win=%" PRIu16 ", payload_sz=%zu",
                      ntohs(p_tcp_h->source), ntohs(p_tcp_h->dest), p_tcp_h->urg ? "U" : "",
                      p_tcp_h->ack ? "A" : "", p_tcp_h->psh ? "P" : "", p_tcp_h->rst ? "R" : "",

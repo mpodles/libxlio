@@ -183,7 +183,14 @@ public:
     mem_buf_desc_t *p_prev_desc;
     size_t sz_buffer; // this is the size of the buffer
     size_t sz_data; // this is the amount of data inside the buffer (sz_data <= sz_buffer)
+    // uint8_t posted_queue_id; // This is an id used to track the position of the buffer within the qp_mgr queue
 
+    struct {
+      size_t data_received;
+      size_t buffer_received;
+      size_t fillers_received;
+    } buffer_stats;
+    // bool is_posted;
     // Tx: qp_mgr owns the mem_buf_desc and the associated data buffer
     // Rx: cq_mgr owns the mem_buf_desc and the associated data buffer
     ring_slave *p_desc_owner;

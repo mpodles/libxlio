@@ -216,7 +216,7 @@ buffer_pool::~buffer_pool()
     int cx = 0;
     for(const auto buffer: fetched_buffers)
       if (cx>=0 && cx<buffer_size)      // check returned value
-        cx += snprintf ( buffers +cx, buffer_size, "[%p, %lu],\n", buffer.first, buffer.second);
+        cx += snprintf ( buffers +cx, buffer_size, "[%p, %lu],\n", buffer.first, ((mem_buf_desc_t *)buffer.first)->sz_buffer);
 
     if(fetched_buffers.size())
       __log_info_err("Buffers fetched\n %s", buffers);
@@ -236,6 +236,8 @@ void buffer_pool::print_val_tbl()
                    m_n_buffers);
 }
 
+// bool buffer_sorter(void* i,void* j) { return (i<j); }
+
 void buffer_pool::print_report(vlog_levels_t log_level /*=VLOG_DEBUG*/)
 {
     char str1[64];
@@ -249,6 +251,27 @@ void buffer_pool::print_report(vlog_levels_t log_level /*=VLOG_DEBUG*/)
                 option_size::to_str(m_buf_size, str2, sizeof(str2)));
     vlog_printf(log_level, "  Requests: %u unsatisfied buffer requests\n",
                 m_p_bpool_stat->n_buffer_pool_no_bufs);
+
+    int buffer_size = 12000;
+    char buffers[buffer_size];
+    int cx = 0;
+    size_t posted_size = 0;
+    // std::sort(fetched_buffers.begin(), fetched_buffers.end(), buffer_sorter);
+    // std::vector<void*> buffers 
+    for (const auto buffer: fetched_buffers) {
+      // if (((mem_buf_desc_t *)(buffer.first))->is_posted)
+      //   posted_size += ((mem_buf_desc_t *)(buffer.first))->sz_buffer - ((mem_buf_desc_t *)(buffer.first))->sz_data;
+      if (cx >= 0 && cx < buffer_size && buffer.first)      // check returned value
+        cx += snprintf(buffers + cx, buffer_size, "[%p, %p, %lu, %lu, %lu],\n",
+                       ((mem_buf_desc_t *)(buffer.first))->p_buffer,
+                       ((mem_buf_desc_t *)(buffer.first))->p_desc_owner,
+                       ((mem_buf_desc_t *)(buffer.first))->buffer_stats.data_received,
+                       ((mem_buf_desc_t *)(buffer.first))->buffer_stats.buffer_received,
+                       ((mem_buf_desc_t *)(buffer.first))->buffer_stats.fillers_received);
+
+    }
+    vlog_printf(VLOG_WARNING, "Buffers posted_size: %lu\n", posted_size);
+    vlog_printf(VLOG_WARNING, "Buffers stats\n%s", buffers);
 }
 
 /* static */
@@ -285,7 +308,7 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
 
     mem_buf_desc_t *head;
 
-    __log_info_warn("%s requested %lu buffers by %p, present %lu, all-time created %lu ", 
+    __log_info_info("%s requested %lu buffers by %p, present %lu, all-time created %lu ", 
                     m_p_bpool_stat->is_rx ? (m_buf_size ? "Rx" : "Rx STRQ") : (m_buf_size ? "TX" : "TX Zcopy"),
                     count, desc_owner, m_n_buffers, m_n_buffers_created);
     if (unlikely(m_n_buffers < count) && !m_b_degraded) {
@@ -318,7 +341,7 @@ bool buffer_pool::get_buffers_thread_safe(descq_t &pDeque, ring_slave *desc_owne
         // Init
         head->lkey = lkey;
         head->p_desc_owner = desc_owner;
-        fetched_buffers[head->p_buffer] = head->sz_buffer;
+        fetched_buffers[head] = desc_owner;
 
         // Push to queue
         pDeque.push_back(head);

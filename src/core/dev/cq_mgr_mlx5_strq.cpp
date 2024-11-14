@@ -259,6 +259,7 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
         if (is_wqe_complete) {
             ++m_qp->m_mlx5_qp.rq.tail;
             buff = m_rx_hot_buffer;
+            // m_rx_hot_buffer->is_posted = false;
             m_rx_hot_buffer = NULL;
             if (likely(status == BS_OK)) {
                 ++m_p_cq_stat->n_rx_consumed_rwqe_count;
@@ -284,6 +285,7 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
             _hot_buffer_stride = nullptr;
         }
     } else {
+        cq_logdbg("EMPTY CQ POLL");
         prefetch((void *)_hot_buffer_stride);
         m_p_cq_stat->n_rx_empty_cq_poll++;
         gettime(&end);
@@ -395,12 +397,17 @@ inline bool cq_mgr_mlx5_strq::strq_cqe_to_mem_buff_desc(struct xlio_mlx5_cqe *cq
     //            (host_byte_cnt & 0x0000FFFFU), _hot_buffer_stride->rx.strides_num,
     //            _current_wqe_consumed_bytes, m_rx_hot_buffer, m_rx_hot_buffer->sz_buffer);
 
-    cq_logwarn("Reduing posted buffer size from %ul to %ul", m_posted_buffer_size_left, m_posted_buffer_size_left - _hot_buffer_stride->sz_buffer);                
-    m_posted_buffer_size_left -= _hot_buffer_stride->sz_buffer;
-    if(m_posted_buffer_size_left == 0) {
-
-      cq_logerr("Posted size dropped to zero");                
-      }
+    if(is_filler)
+        m_rx_hot_buffer->buffer_stats.fillers_received +=_hot_buffer_stride->sz_buffer;
+    else {
+        m_rx_hot_buffer->buffer_stats.data_received +=_hot_buffer_stride->sz_data;
+        m_rx_hot_buffer->buffer_stats.buffer_received +=_hot_buffer_stride->sz_buffer;
+    }
+    cq_logwarn("Received CQ of size %d, current buffer size left: %ul and rest: %ul",
+               _hot_buffer_stride->sz_data,
+               get_current_wqe_size_left(), 
+               get_rx_buffer_size_left()
+               );
     // cq_logerr("\n"
     //            "STRQ CQE: bytes in CQE: %" PRIu32 ", \n"
     //            "STRIDES in CQE hot_buffer_stride.strides: %" PRIu16 "\n" 
@@ -559,7 +566,7 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
     struct timespec start, end;
     gettime(&start);
     if (m_qp_rec.debt >= (int)m_n_sysvar_rx_num_wr_to_post_recv) {
-        cq_logwarn("previous poll completed the WQE the DEBT: %d >= %d WRE_BATCH and the buffer_pool_len is: %d and the number of posted WR is %d",
+        cq_logwarn("previous poll completed the WQE the DEBT: %d >= %d WRE_BATCH and the buffer_pool_len is: %d and the number of posted WR is %" PRIu32,
                    m_qp_rec.debt, (int)m_n_sysvar_rx_num_wr_to_post_recv, m_p_cq_stat->n_buffer_pool_len, m_qp_rec.qp->m_num_posted_wr);
         compensate_qp_poll_failed(); // Reuse this method as success.
     }
@@ -577,6 +584,7 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
 
     buff_status_e status = BS_OK;
     uint32_t ret = 0;
+    measure_start(5);
     while (ret < m_n_sysvar_cq_poll_batch_max) {
         mem_buf_desc_t *buff = nullptr;
         // buff_wqe is only returned when the CQE fetched completes the WQE
@@ -585,22 +593,6 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
         
         if(buff_wqe) {
           ++m_qp_rec.debt;
-
-          if(true) { 
-            struct timespec start_occupied;
-            gettime(&start_occupied);
-            int wrote = 0;
-            wrote += fwrite("start", sizeof("start")-1, 1, _strq_log_file);
-            wrote += fwrite(&buff_wqe->p_buffer, sizeof(void *), 1, _strq_log_file);
-            uint64_t timestamp = (SEC_TO_MICRO(start_occupied.tv_sec) + NANO_TO_MICRO(start_occupied.tv_nsec));
-            // cq_logerr("start buffer %p timestamp %ud",buff_wqe->p_buffer, timestamp);
-
-            wrote += fwrite(&timestamp, sizeof(uint64_t), 1, _strq_log_file);
-            if (wrote< 3)
-              cq_logerr("error writing start");
-            
-            // m_buffers_usage[buff_wqe->p_buffer] = std::make_pair(SEC_TO_MICRO(start_occupied.tv_sec) + NANO_TO_MICRO(start_occupied.tv_nsec), buff_wqe->sz_data);
-          }
           m_qp_rec.qp->m_num_posted_wr--;
         }
 
@@ -617,7 +609,7 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
         }
     }
 
-    cq_loginfo("finished cq_polling with %d buff_stride in poll() set\n", ret);
+    // cq_loginfo("finished cq_polling with %d buff_stride in poll() set\n", ret);
     update_global_sn(*p_cq_poll_sn, ret);
 
     if (likely(ret > 0)) {
@@ -635,6 +627,7 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
 
     m_p_cq_stat->poll_and_process_time += TIME_DIFF_in_MICRO(start, end);
 
+    measure_finish(5);
     return ret_rx_processed;
 }
 
@@ -674,7 +667,7 @@ void cq_mgr_mlx5_strq::reclaim_recv_buffer_helper(mem_buf_desc_t *buff)
 
                 mem_buf_desc_t *rwqe =
                     reinterpret_cast<mem_buf_desc_t *>(buff->lwip_pbuf.pbuf.desc.mdesc);
-                __log_info_warn("Current Stride (%p) number of strides %d and number of strides in RWQE(%p): %d (%d-%d=%d) \n",
+                __log_info_info("Current Stride (%p) number of strides %d and number of strides in RWQE(%p): %d (%d-%d=%d) \n",
                                buff,
                                buff->rx.strides_num,
                                rwqe->p_buffer,
@@ -687,22 +680,6 @@ void cq_mgr_mlx5_strq::reclaim_recv_buffer_helper(mem_buf_desc_t *buff)
                 if (buff->rx.strides_num == rwqe->add_ref_count(-buff->rx.strides_num)) {
                     // Is last stride.
                     cq_mgr::reclaim_recv_buffer_helper(rwqe);
-                    struct timespec end_occupied;
-                    gettime(&end_occupied);
-                    int wrote = 0;
-                    wrote += fwrite("end", sizeof("end")-1, 1, _strq_log_file);
-                    wrote += fwrite(&rwqe->p_buffer, sizeof(void *), 1, _strq_log_file);
-                    uint64_t timestamp = (SEC_TO_MICRO(end_occupied.tv_sec) + NANO_TO_MICRO(end_occupied.tv_nsec));
-                    wrote += fwrite(&timestamp, sizeof(uint64_t), 1, _strq_log_file);
-                    // cq_logerr("end buffer %p timestamp %ud", rwqe->p_buffer, timestamp);
-                    if (wrote < 3)
-                      cq_logerr("error writing end");
-            
-                    
-                    // int64_t finishing_time = SEC_TO_MICRO(end_occupied.tv_sec) + NANO_TO_MICRO(end_occupied.tv_nsec);
-                    // const std::pair<uint64_t, uint64_t> &buffer = m_buffers_usage[(void*)(rwqe->p_buffer)];
-                    // m_buffers_usage[rwqe->p_buffer] = std::make_pair(finishing_time - buffer.first, buffer.second);
-
                 }
 
                 VLIST_DEBUG_CQ_MGR_PRINT_ERROR_IS_MEMBER;

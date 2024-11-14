@@ -93,7 +93,6 @@ cq_mgr::cq_mgr(ring_simple *p_ring, ib_ctx_handler *p_ib_ctx_handler, int cq_siz
     , m_n_sysvar_rx_num_wr_to_post_recv(safe_mce_sys().rx_num_wr_to_post_recv)
     , m_rx_buffs_rdy_for_free_head(NULL)
     , m_rx_buffs_rdy_for_free_tail(NULL)
-    , m_posted_buffer_size_left(0)
     , m_comp_event_channel(p_comp_event_channel)
     , m_b_notification_armed(false)
     , m_n_sysvar_qp_compensation_level(safe_mce_sys().qp_compensation_level)
@@ -261,6 +260,11 @@ int cq_mgr::get_channel_fd()
     return m_comp_event_channel->fd;
 }
 
+size_t cq_mgr::get_rx_buffer_size_left() 
+{ 
+  return m_qp_rec.qp->m_num_posted_wr;
+}
+
 void cq_mgr::add_qp_rx(qp_mgr *qp)
 {
     cq_logdbg("qp_mgr=%p", qp);
@@ -301,7 +305,6 @@ void cq_mgr::add_qp_rx(qp_mgr *qp)
             break;
         }
         qp_rx_wr_num -= n_num_mem_bufs;
-        m_posted_buffer_size_left += n_num_mem_bufs * 256 * 512;
     }
     cq_logdbg("Successfully post_recv qp with %d new Rx buffers (planned=%d)",
               qp->get_rx_max_wr_num() - qp_rx_wr_num, qp->get_rx_max_wr_num());
@@ -309,7 +312,6 @@ void cq_mgr::add_qp_rx(qp_mgr *qp)
     // Add qp_mgr to map
     m_qp_rec.qp = qp;
     m_qp_rec.debt = 0;
-    cq_logerr("Posted buffers of total size: %ud", m_posted_buffer_size_left);
 }
 
 void cq_mgr::del_qp_rx(qp_mgr *qp)
@@ -591,8 +593,7 @@ void cq_mgr::compensate_qp_poll_failed()
             size_t buffers = std::min<size_t>(m_qp_rec.debt, m_rx_pool.size());
             m_qp_rec.qp->post_recv_buffers(&m_rx_pool, buffers);
             m_qp_rec.debt -= buffers;
-            cq_logwarn("inncreased buffer size left from %ul to %ul", m_posted_buffer_size_left, m_posted_buffer_size_left + buffers * 512 * 256);
-            m_posted_buffer_size_left += buffers * 512 * 256;
+            cq_logwarn("posted %d buffers", buffers);
             m_p_cq_stat->n_buffer_pool_len = m_rx_pool.size();
         }
     }

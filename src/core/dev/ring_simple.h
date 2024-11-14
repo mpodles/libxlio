@@ -86,7 +86,7 @@ public:
                            xlio_tis *tis);
     bool is_up() override;
     void start_active_qp_mgr();
-    size_t get_rx_buffer_size_left();
+    size_t get_rx_buffer_size_left() override;
     void stop_active_qp_mgr();
     mem_buf_desc_t *mem_buf_tx_get(ring_user_id_t id, bool b_block, pbuf_type type,
                                    int n_num_mem_bufs = 1) override;

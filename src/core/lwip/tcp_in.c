@@ -49,6 +49,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "dpu_statistics.h"
 // This is here to make debugging recompilation faster. For some reason headers needs to be fully recompiled whereas having debugging flags
 // in the source file allows much faster incremental recompilation
 #undef TCP_INPUT_DEBUG 

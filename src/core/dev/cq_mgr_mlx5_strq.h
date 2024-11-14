@@ -54,6 +54,10 @@ public:
     virtual void add_qp_rx(qp_mgr *qp) override;
     virtual uint32_t clean_cq() override;
 
+    size_t get_current_wqe_size_left() { return (_wqe_buff_size_bytes - _current_wqe_consumed_bytes);}
+    size_t get_rx_buffer_size_left() { return (m_qp->m_num_posted_wr - 1) * _wqe_buff_size_bytes + get_current_wqe_size_left();}
+    
+
 protected:
     virtual void statistics_print() override;
     virtual void reclaim_recv_buffer_helper(mem_buf_desc_t *buff) override;

@@ -308,6 +308,7 @@ dpcp::adapter *ib_ctx_handler::set_dpcp_adapter()
         if (dpcp_lst[i].name == m_p_ibv_device->name) {
             dpcp::adapter *adapter = NULL;
 
+            ibch_logerr("Opening adapter %s", dpcp_lst[i].name.c_str());
             status = p_provider->open_adapter(dpcp_lst[i].name, adapter);
             if ((dpcp::DPCP_OK == status) && (adapter)) {
                 int ret = 0;

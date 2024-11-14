@@ -39,6 +39,9 @@
 #if defined(DEFINED_DIRECT_VERBS)
 #include "dev/qp_mgr_eth_mlx5.h"
 #include "dev/qp_mgr_eth_mlx5_dpcp.h"
+extern "C" {
+  #include "dpu_statistics.h"
+}
 #endif
 
 #undef MODULE_NAME
@@ -921,7 +924,7 @@ mem_buf_desc_t *ring_simple::get_tx_buffers(pbuf_type type, uint32_t n_num_mem_b
     mem_buf_desc_t *head;
     descq_t &pool = type == PBUF_ZEROCOPY ? m_zc_pool : m_tx_pool;
 
-    ring_logwarn("mem_buf_tx_get called this with: n_num_mem_bufs=%d and m_tx_pool:%d", n_num_mem_bufs, m_tx_pool.size());
+    ring_loginfo("mem_buf_tx_get called this with: n_num_mem_bufs=%d and m_tx_pool:%d", n_num_mem_bufs, m_tx_pool.size());
     if (unlikely(pool.size() < n_num_mem_bufs)) {
         int count = std::max(m_tx_bufs_compensate, n_num_mem_bufs);
         if (request_more_tx_buffers(type, count, m_tx_lkey)) {

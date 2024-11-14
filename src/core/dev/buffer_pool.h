@@ -147,7 +147,7 @@ private:
 
     bpool_stats_t *m_p_bpool_stat;
     bpool_stats_t m_bpool_stat_static;
-    std::map<void*, uint64_t> fetched_buffers;
+    std::map<void*, void*> fetched_buffers; // Mapping of pointers to m_bufs and their corresponding 
 
     xlio_allocator_heap m_allocator_data;
     xlio_allocator_heap m_allocator_metadata;
