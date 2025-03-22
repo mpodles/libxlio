@@ -45,6 +45,10 @@
 #include "util/valgrind.h"
 #include "event/event_handler_manager.h"
 
+extern "C" {
+  #include "dpu_statistics.h"
+}
+
 #define MODULE_NAME "ibch"
 
 #define ibch_logpanic   __log_panic
@@ -454,11 +458,13 @@ uint32_t ib_ctx_handler::mem_reg(void *addr, size_t length, uint64_t access)
     mr = ibv_reg_mr(m_p_ibv_pd, addr, length, access);
     VALGRIND_MAKE_MEM_DEFINED(mr, sizeof(ibv_mr));
     if (NULL == mr) {
+        // probber_store_value("memory_region", (void *)0);
         print_warning_rlimit_memlock(length, errno);
     } else {
         m_mr_map_lkey[mr->lkey] = mr;
         lkey = mr->lkey;
 
+        // probber_store_value("memory_region", (void *)1);
         ibch_logdbg("dev:%s (%p) addr=%p length=%lu pd=%p", get_ibname(), m_p_ibv_device, addr,
                     length, m_p_ibv_pd);
     }

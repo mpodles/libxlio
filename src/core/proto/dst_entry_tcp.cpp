@@ -252,8 +252,13 @@ ssize_t dst_entry_tcp::fast_send(const iovec *p_iov, const ssize_t sz_iov, xlio_
             } else {
                 m_sge[i].lkey = (i == 0 ? m_p_ring->get_tx_lkey(m_id) : m_sge[0].lkey);
             }
+            dst_tcp_logdbg("m_sge[%d] addr: %p  len: %d lkey: %lu, attr: %d zerocopy: %d",
+                            i, m_sge[i].addr, m_sge[i].length, m_sge[i].lkey,
+                            p_tcp_iov[i].p_desc->lwip_pbuf.pbuf.desc.attr,
+                            is_zerocopy);
         }
 
+        // probber_store_value("send_lwip_buffer", (void *)0);
         ret = send_lwip_buffer(m_id, m_p_send_wqe, attr.flags, attr.tis);
     } else { // We don'nt support inline in this case, since we believe that this a very rare case
         mem_buf_desc_t *p_mem_buf_desc;

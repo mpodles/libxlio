@@ -210,20 +210,20 @@ bool cq_mgr_mlx5_strq::set_current_hot_buffer()
 mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_t *&buff_stride)
 {
     mem_buf_desc_t *buff = NULL;
-    struct timespec start, end;
-
-    gettime(&start);
+    // struct timespec start, end;
+    //
+    // gettime(&start);
 
     if (unlikely(!m_rx_hot_buffer)) {
         if (!set_current_hot_buffer()) {
             m_p_cq_stat->n_rx_empty_cq_poll++;
-            gettime(&end);
-            m_p_cq_stat->empty_poll_time += TIME_DIFF_in_MICRO(start, end);
+            // gettime(&end);
+            // m_p_cq_stat->empty_poll_time += TIME_DIFF_in_MICRO(start, end);
             return NULL;
         }
         // _unique_buffers.insert(std::make_pair(m_rx_hot_buffer->p_buffer, m_rx_hot_buffer->sz_data));
-        m_p_cq_stat->max_buffer_pool_address = std::max(m_p_cq_stat->max_buffer_pool_address, (uint64_t)m_rx_hot_buffer->p_buffer);
-        m_p_cq_stat->min_buffer_pool_address = std::min(m_p_cq_stat->min_buffer_pool_address, (uint64_t)m_rx_hot_buffer->p_buffer);
+        // m_p_cq_stat->max_buffer_pool_address = std::max(m_p_cq_stat->max_buffer_pool_address, (uint64_t)m_rx_hot_buffer->p_buffer);
+        // m_p_cq_stat->min_buffer_pool_address = std::min(m_p_cq_stat->min_buffer_pool_address, (uint64_t)m_rx_hot_buffer->p_buffer);
     }
 
     if (likely(!_hot_buffer_stride)) {
@@ -288,8 +288,8 @@ mem_buf_desc_t *cq_mgr_mlx5_strq::poll(enum buff_status_e &status, mem_buf_desc_
         cq_logdbg("EMPTY CQ POLL");
         prefetch((void *)_hot_buffer_stride);
         m_p_cq_stat->n_rx_empty_cq_poll++;
-        gettime(&end);
-        m_p_cq_stat->empty_poll_time += TIME_DIFF_in_MICRO(start, end);
+        // gettime(&end);
+        // m_p_cq_stat->empty_poll_time += TIME_DIFF_in_MICRO(start, end);
     }
 
     prefetch((uint8_t *)m_mlx5_cq.cq_buf +
@@ -563,8 +563,8 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
 
     /* Assume locked!!! */
     cq_logfuncall("");
-    struct timespec start, end;
-    gettime(&start);
+    // struct timespec start, end;
+    // gettime(&start);
     if (m_qp_rec.debt >= (int)m_n_sysvar_rx_num_wr_to_post_recv) {
         cq_logwarn("previous poll completed the WQE the DEBT: %d >= %d WRE_BATCH and the buffer_pool_len is: %d and the number of posted WR is %" PRIu32,
                    m_qp_rec.debt, (int)m_n_sysvar_rx_num_wr_to_post_recv, m_p_cq_stat->n_buffer_pool_len, m_qp_rec.qp->m_num_posted_wr);
@@ -584,7 +584,7 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
 
     buff_status_e status = BS_OK;
     uint32_t ret = 0;
-    measure_start(5);
+    // measure_start(5);
     while (ret < m_n_sysvar_cq_poll_batch_max) {
         mem_buf_desc_t *buff = nullptr;
         // buff_wqe is only returned when the CQE fetched completes the WQE
@@ -621,13 +621,13 @@ int cq_mgr_mlx5_strq::poll_and_process_element_rx(uint64_t *p_cq_poll_sn, void *
     }
     m_p_cq_stat->n_rx_polls++;
 
-    if (gettime(&end)) {
+    // if (gettime(&end)) {
         // cq_logerr("stop err");
-    }
+    // }
 
-    m_p_cq_stat->poll_and_process_time += TIME_DIFF_in_MICRO(start, end);
+    // m_p_cq_stat->poll_and_process_time += TIME_DIFF_in_MICRO(start, end);
 
-    measure_finish(5);
+    // measure_finish(5);
     return ret_rx_processed;
 }
 

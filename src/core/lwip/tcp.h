@@ -33,6 +33,7 @@
 #define __LWIP_TCP_H__
 
 #include <sys/uio.h>
+#include <sys/queue.h>
 
 #include "core/lwip/opt.h"
 
@@ -362,6 +363,7 @@ struct tcp_pcb {
     struct pbuf *refused_data; /* Data previously received but not yet taken by upper layer */
     struct tcp_seg *seg_alloc; /* Available tcp_seg element for use */
     struct pbuf *pbuf_alloc; /* Available pbuf element for use */
+    TAILQ_HEAD(, pbuf) pbuf_cache;
 
     /* Function to be called when more send buffer space is available. */
     tcp_sent_fn sent;

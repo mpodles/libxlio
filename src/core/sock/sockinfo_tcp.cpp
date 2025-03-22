@@ -356,6 +356,7 @@ sockinfo_tcp::sockinfo_tcp(int fd, int domain)
     }
     tcp_err(&m_pcb, sockinfo_tcp::err_lwip_cb);
     tcp_sent(&m_pcb, sockinfo_tcp::ack_recvd_lwip_cb);
+    TAILQ_INIT(&m_pcb.pbuf_cache);
 
     m_n_pbufs_rcvd = m_n_pbufs_freed = 0;
 
@@ -1053,17 +1054,18 @@ retry_is_ready:
         return -1;
     }
 
-    size_t size_left = m_p_rx_ring->get_rx_buffer_size_left();
+    // size_t size_left = m_p_rx_ring->get_rx_buffer_size_left();
 
     int total_tx = 0;
     __off64_t file_offset = 0;
     bool block_this_run = BLOCK_THIS_RUN(m_b_blocking, __flags);
-    si_tcp_logwarn("tx: iov=%p niovs=%zu, size of receive buffers=%ud", p_iov, sz_iov, size_left);
+    // si_tcp_logdbg("tx: iov=%p niovs=%zu, size of receive buffers=%ud", p_iov, sz_iov, size_left);
     // This doesn't consider the other headers
     // if(sz_iov * (8 + 16 + 4096) > size_left)
     //   si_tcp_logerr("not enough buffer to receive");
+    // probber_store_value("tcp_tx_iov", (void *)sz_iov);
     for (size_t i = 0; i < sz_iov; i++) {
-        si_tcp_loginfo("iov:%d base=%p len=%d", i, p_iov[i].iov_base, p_iov[i].iov_len);
+        si_tcp_logdbg("iov:%d base=%p len=%d", i, p_iov[i].iov_base, p_iov[i].iov_len);
         if (unlikely(!p_iov[i].iov_base)) {
             continue;
         }
@@ -1164,7 +1166,7 @@ retry_is_ready:
                 }
             }
 
-            si_tcp_loginfo("tcp_write in retry_write: ptr: %p, size: %d", tx_ptr, tx_size);
+            si_tcp_logwarn("tcp_write in retry_write: ptr: %p, size: %d", tx_ptr, tx_size);
             err = tcp_write(&m_pcb, tx_ptr, tx_size, apiflags, &tx_arg.priv);
             if (unlikely(err != ERR_OK)) {
                 if (unlikely(err == ERR_CONN)) { // happens when remote drops during big write
@@ -1269,10 +1271,10 @@ err:
  */
 err_t sockinfo_tcp::ip_output(struct pbuf *p, struct tcp_seg *seg, void *v_p_conn, uint16_t flags)
 {
-    struct timespec start, end;
-    if (gettime(&start)) {
-        // cq_logerr("start err");
-    }
+    // struct timespec start, end;
+    // if (gettime(&start)) {
+    //     // cq_logerr("start err");
+    // }
     sockinfo_tcp *p_si_tcp = (sockinfo_tcp *)(((struct tcp_pcb *)v_p_conn)->my_container);
     dst_entry *p_dst = p_si_tcp->m_p_connected_dst_entry;
     int max_count = p_si_tcp->m_pcb.tso.max_send_sge;
@@ -1361,10 +1363,10 @@ send_iov:
     }
 
 
-    if (gettime(&end)) {
+    // if (gettime(&end)) {
         // cq_logerr("stop err");
-    }
-    p_si_tcp->m_p_socket_stats->ip_output_time += TIME_DIFF_in_MICRO(start, end);
+    // }
+    // p_si_tcp->m_p_socket_stats->ip_output_time += TIME_DIFF_in_MICRO(start, end);
     return (ret >= 0 ? ERR_OK : ERR_WOULDBLOCK);
 }
 
@@ -1763,20 +1765,20 @@ void sockinfo_tcp::handle_timer_expired(void *user_data)
 
     tcp_timer();
 
-    if(m_sysvar_detailed_stats) {
-      uint64_t time_total = 0;
-      uint64_t buffers_total = 0;
-      for(const auto &buffer: m_buffers_usage) {
-        if (buffer.second.first < 100'000'000)
-          time_total += buffer.second.first;
-        ++buffers_total;
-      }
-      m_p_socket_stats->average_zc_buffer_time = time_total/buffers_total;
-      m_p_socket_stats->buffers_used = buffers_total;
-        // if (cx>=0 && cx<buffer_size)      // check returned value
-          // cx += snprintf ( buffers +cx, buffer_size, "[%p, time:%lu, len:%lu],\n", buffer.first, buffer.second.first, buffer.second.second);
-      m_buffers_usage.clear();
-    }
+    // if(m_sysvar_detailed_stats) {
+    //   uint64_t time_total = 0;
+    //   uint64_t buffers_total = 0;
+    //   for(const auto &buffer: m_buffers_usage) {
+    //     if (buffer.second.first < 100'000'000)
+    //       time_total += buffer.second.first;
+    //     ++buffers_total;
+    //   }
+    //   m_p_socket_stats->average_zc_buffer_time = time_total/buffers_total;
+    //   m_p_socket_stats->buffers_used = buffers_total;
+    //     // if (cx>=0 && cx<buffer_size)      // check returned value
+    //       // cx += snprintf ( buffers +cx, buffer_size, "[%p, time:%lu, len:%lu],\n", buffer.first, buffer.second.first, buffer.second.second);
+    //   m_buffers_usage.clear();
+    // }
 }
 
 void sockinfo_tcp::abort_connection()
@@ -2345,9 +2347,6 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
         }
     }
 
-    // if (in_flags & 0x4000001)
-    //   si_tcp_logerr("rx: iov=%p niovs=%d", p_iov, sz_iov);
-
     /* poll rx queue till we have something */
     lock_tcp_con();
 
@@ -2422,12 +2421,12 @@ ssize_t sockinfo_tcp::rx(const rx_call_t call_type, iovec *p_iov, ssize_t sz_iov
 #endif /* DEFINED_UTLS */
 
         // si_tcp_logerr("Going into dequeue_packet because pkt_Ready_list %d", m_n_rx_pkt_ready_list_count);
-        struct timespec start, end;
-        gettime(&start);
+        // struct timespec start, end;
+        // gettime(&start);
         total_rx = dequeue_packet(p_iov, sz_iov, __from, __fromlen, in_flags, &out_flags);
-        gettime(&end);
+        // gettime(&end);
 
-        m_socket_stats.dequeue_packet_time += TIME_DIFF_in_MICRO(start, end);
+        // m_socket_stats.dequeue_packet_time += TIME_DIFF_in_MICRO(start, end);
         if (total_rx < 0) {
             si_tcp_logerr("dqeueued %d, error %d", total_rx, errno);
             unlock_tcp_con();
@@ -2577,14 +2576,14 @@ bool sockinfo_tcp::rx_input_cb(mem_buf_desc_t *p_rx_pkt_mem_buf_desc_info, void 
 
     sock->m_xlio_thr = p_rx_pkt_mem_buf_desc_info->rx.is_xlio_thr;
 
-    struct timespec start, end;
+    // struct timespec start, end;
 
-    gettime(&start);
+    // gettime(&start);
     L3_level_tcp_input((pbuf *)p_rx_pkt_mem_buf_desc_info, pcb);
-    gettime(&end);
+    // gettime(&end);
 
 
-    m_socket_stats.tcp_input_time += TIME_DIFF_in_MICRO(start, end);
+    // m_socket_stats.tcp_input_time += TIME_DIFF_in_MICRO(start, end);
     sock->m_xlio_thr = false;
 
     if (sock != this) {
@@ -5368,8 +5367,8 @@ int sockinfo_tcp::zero_copy_rx(iovec *p_iov, mem_buf_desc_t *pdesc, int *p_flags
             len -= sizeof(iovec);
             offset += sizeof(iovec);
         }
-        if(m_sysvar_detailed_stats)
-          m_buffers_usage[prev->p_buffer] = std::make_pair(SEC_TO_MICRO(start.tv_sec) + NANO_TO_MICRO(start.tv_nsec), prev->sz_data);
+        // if(m_sysvar_detailed_stats)
+        //   m_buffers_usage[prev->p_buffer] = std::make_pair(SEC_TO_MICRO(start.tv_sec) + NANO_TO_MICRO(start.tv_nsec), prev->sz_data);
 
         m_rx_pkt_ready_list.pop_front();
         m_p_socket_stats->n_rx_zcopy_pkt_count++;
@@ -5612,13 +5611,13 @@ int sockinfo_tcp::recvfrom_zcopy_free_packets(struct xlio_recvfrom_zcopy_packet_
         xlio_recvfrom_zcopy_packet_t *p_pkts = (xlio_recvfrom_zcopy_packet_t *)(buf + offset);
         buff = (mem_buf_desc_t *)p_pkts->packet_id;
 
-        if(m_sysvar_detailed_stats) { 
-          struct timespec end;
-          gettime(&end);
-          uint64_t finishing_time = SEC_TO_MICRO(end.tv_sec) + NANO_TO_MICRO(end.tv_nsec);
-          const std::pair<uint64_t, uint64_t> &buffer = m_buffers_usage[(void*)(buff->p_buffer)];
-          m_buffers_usage[buff->p_buffer] = std::make_pair(finishing_time - buffer.first, buffer.second);
-        }
+        // if(m_sysvar_detailed_stats) { 
+        //   struct timespec end;
+        //   gettime(&end);
+        //   uint64_t finishing_time = SEC_TO_MICRO(end.tv_sec) + NANO_TO_MICRO(end.tv_nsec);
+        //   const std::pair<uint64_t, uint64_t> &buffer = m_buffers_usage[(void*)(buff->p_buffer)];
+        //   m_buffers_usage[buff->p_buffer] = std::make_pair(finishing_time - buffer.first, buffer.second);
+        // }
 
         if (m_p_rx_ring && !m_p_rx_ring->is_member(buff->p_desc_owner)) {
             errno = ENOENT;

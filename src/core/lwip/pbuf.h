@@ -32,9 +32,11 @@
 
 #ifndef __LWIP_PBUF_H__
 #define __LWIP_PBUF_H__
+#include <sys/queue.h>
 
 #include "core/lwip/opt.h"
 #include "core/lwip/err.h"
+
 
 #ifdef __cplusplus
 extern "C" {
@@ -108,6 +110,9 @@ struct pbuf {
 
     /** Customer specific description */
     pbuf_desc desc;
+
+    /** To avoid constant allocations and dellocations, some pbufs are cached inside pcb's list  */
+    TAILQ_ENTRY(pbuf) pcb_cache_entry;
 };
 
 /** Prototype for a function to free a custom pbuf */

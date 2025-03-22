@@ -237,7 +237,7 @@ int qp_mgr::configure(struct qp_mgr_desc *desc)
             num_wr; // force min for create_qp or you will have error of memory allocation
     }
 
-    qp_logdbg("Requested QP parameters: "
+    qp_logwarn("Requested QP parameters: "
               "wre: tx = %d rx = %d "
               "sge: tx = %d rx = %d "
               "inline: %d",
@@ -250,7 +250,7 @@ int qp_mgr::configure(struct qp_mgr_desc *desc)
         return -1;
     }
 
-    qp_logdbg("Configured QP parameters: "
+    qp_logwarn("Configured QP parameters: "
               "wre: tx = %d rx = %d "
               "sge: tx = %d rx = %d "
               "inline: %d",
@@ -274,7 +274,7 @@ int qp_mgr::configure(struct qp_mgr_desc *desc)
     m_qp_cap.max_recv_sge = min(tmp_ibv_qp_attr.cap.max_recv_sge, m_qp_cap.max_recv_sge);
     m_qp_cap.max_inline_data = min(tmp_ibv_qp_attr.cap.max_inline_data, m_qp_cap.max_inline_data);
 
-    qp_logdbg("Used QP (num=%d) "
+    qp_logwarn("Used QP (num=%d) "
               "wre: tx = %d rx = %d "
               "sge: tx = %d rx = %d "
               "inline: %d",
@@ -579,13 +579,10 @@ inline int qp_mgr::send_to_wire(xlio_ibv_send_wr *p_send_wqe, xlio_wr_tx_packet_
     return ret;
 }
 
-// std::set<std::pair<void*,size_t>> unique_wqe_mem_bufs;
-
 int qp_mgr::send(xlio_ibv_send_wr *p_send_wqe, xlio_wr_tx_packet_attr attr, xlio_tis *tis,
                  unsigned credits)
 {
     mem_buf_desc_t *p_mem_buf_desc = (mem_buf_desc_t *)p_send_wqe->wr_id;
-    // unique_wqe_mem_bufs.insert(std::make_pair((void*)p_mem_buf_desc->p_buffer, p_mem_buf_desc->sz_data));
     /* Control tx completions:
      * - XLIO_TX_WRE_BATCHING - The number of Tx Work Request Elements used
      *   until a completion signal is requested.

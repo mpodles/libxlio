@@ -21,7 +21,9 @@ struct list_head {
     {                                                                                              \
         &(name), &(name)                                                                           \
     }
-
+#ifdef LIST_HEAD 
+#undef LIST_HEAD
+#endif
 #define LIST_HEAD(name) struct list_head name = LIST_HEAD_INIT(name)
 
 static inline void INIT_LIST_HEAD(struct list_head *list)

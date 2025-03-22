@@ -123,6 +123,14 @@ typedef std::deque<socket_option_t *> socket_options_list_t;
 typedef std::map<tcp_pcb *, int> ready_pcb_map_t;
 typedef std::map<flow_tuple, tcp_pcb *> syn_received_map_t;
 typedef std::map<sock_addr, xlio_desc_list_t> peer_map_t;
+// typedef xlio_list_t<pbuf, socket_fd_api::ep_ready_fd_node_offset> ep_ready_fd_list_t;
+//
+//     static inline size_t ep_ready_fd_node_offset(void)
+//     {
+//         return NODE_OFFSET(socket_fd_api, ep_ready_fd_node);
+//     }
+//
+//     list_node<socket_fd_api, socket_fd_api::ep_ready_fd_node_offset> ep_ready_fd_node;
 
 /* taken from inet_ecn.h in kernel */
 enum inet_ecns {
@@ -600,7 +608,7 @@ private:
     uint64_t m_n_pbufs_rcvd;
     uint64_t m_n_pbufs_freed;
     // Map of buffers with their sizes and time until they were returned
-    std::map<void*, std::pair<uint64_t, uint64_t>> m_buffers_usage;
+    // std::map<void*, std::pair<uint64_t, uint64_t>> m_buffers_usage;
     FILE* _tcp_log_file;
 };
 typedef struct tcp_seg tcp_seg;

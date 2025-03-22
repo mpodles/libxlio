@@ -1069,6 +1069,11 @@ struct pbuf *tcp_tx_pbuf_alloc(struct tcp_pcb *pcb, u16_t length, pbuf_type type
     struct pbuf *p;
 
     if (!pcb->pbuf_alloc || pcb->pbuf_alloc->type != type) {
+        // if (!TAILQ_EMPTY(&pcb->pbuf_cache)) {
+        //   p = TAILQ_FIRST(&pcb->pbuf_cache);
+        //   TAILQ_REMOVE(&pcb->pbuf_cache, p, pcb_cache_entry);
+        //   return p;
+        // }
 
         // pbuf_alloc is not valid, we should allocate a new pbuf.
         p = external_tcp_tx_pbuf_alloc(pcb, type, desc, p_buff);
@@ -1115,6 +1120,7 @@ void tcp_tx_pbuf_free(struct tcp_pcb *pcb, struct pbuf *p)
         p_next = p->next;
         p->next = NULL;
         if (p->type == PBUF_RAM || p->type == PBUF_ZEROCOPY) {
+            // TAILQ_INSERT_TAIL(&pcb->pbuf_cache, p, pcb_cache_entry);
             external_tcp_tx_pbuf_free(pcb, p);
         } else {
             pbuf_free(p);
