@@ -490,7 +490,12 @@ void cq_mgr_mlx5::handle_sq_wqe_prop(unsigned index)
      */
 
     do {
-        if (p->buf) {
+        // Only release the buffer if it's not ZEROCOPY because if it is, then it will be stored into socketinfo ZC cache
+        if (p->buf && 
+            !(m_use_zc_buffers_cache && 
+              p->buf->lwip_pbuf.pbuf.desc.attr == PBUF_DESC_MKEY &&
+              p->buf->lwip_pbuf.pbuf.type == PBUF_ZEROCOPY)) 
+        {
             m_p_ring->mem_buf_desc_return_single_locked(p->buf);
         }
         if (p->ti) {

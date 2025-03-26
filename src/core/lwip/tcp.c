@@ -1068,12 +1068,10 @@ struct pbuf *tcp_tx_pbuf_alloc(struct tcp_pcb *pcb, u16_t length, pbuf_type type
 {
     struct pbuf *p;
 
-    if (!pcb->pbuf_alloc || pcb->pbuf_alloc->type != type) {
-        // if (!TAILQ_EMPTY(&pcb->pbuf_cache)) {
-        //   p = TAILQ_FIRST(&pcb->pbuf_cache);
-        //   TAILQ_REMOVE(&pcb->pbuf_cache, p, pcb_cache_entry);
-        //   return p;
-        // }
+    /*if (PBUF_ZEROCOPY == type && !TAILQ_EMPTY(&pcb->pbuf_cache)) {
+      p = TAILQ_FIRST(&pcb->pbuf_cache);
+      TAILQ_REMOVE(&pcb->pbuf_cache, p, pcb_cache_entry);
+    } else */if (!pcb->pbuf_alloc || pcb->pbuf_alloc->type != type) {
 
         // pbuf_alloc is not valid, we should allocate a new pbuf.
         p = external_tcp_tx_pbuf_alloc(pcb, type, desc, p_buff);

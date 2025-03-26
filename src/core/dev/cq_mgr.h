@@ -235,6 +235,7 @@ protected:
     size_t m_sz_transport_header;
     ib_ctx_handler *m_p_ib_ctx_handler;
     const uint32_t m_n_sysvar_rx_num_wr_to_post_recv;
+    bool m_use_zc_buffers_cache;
     descq_t m_rx_pool;
 
     /* This fields are needed to track internal memory buffers

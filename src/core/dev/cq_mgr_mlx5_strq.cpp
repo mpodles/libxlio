@@ -46,9 +46,6 @@
 #include <string>
 #include <algorithm> // for minmax
 
-extern "C" {
-  #include "dpu_statistics.h"
-}
 #define MODULE_NAME "cq_mgr_mlx5_strq"
 
 #define cq_logfunc    __log_info_func

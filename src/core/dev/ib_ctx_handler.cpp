@@ -45,10 +45,6 @@
 #include "util/valgrind.h"
 #include "event/event_handler_manager.h"
 
-extern "C" {
-  #include "dpu_statistics.h"
-}
-
 #define MODULE_NAME "ibch"
 
 #define ibch_logpanic   __log_panic

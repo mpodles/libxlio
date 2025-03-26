@@ -91,6 +91,7 @@ cq_mgr::cq_mgr(ring_simple *p_ring, ib_ctx_handler *p_ib_ctx_handler, int cq_siz
     , m_sz_transport_header(0)
     , m_p_ib_ctx_handler(p_ib_ctx_handler)
     , m_n_sysvar_rx_num_wr_to_post_recv(safe_mce_sys().rx_num_wr_to_post_recv)
+    , m_use_zc_buffers_cache(safe_mce_sys().use_zc_buffers_cache)
     , m_rx_buffs_rdy_for_free_head(NULL)
     , m_rx_buffs_rdy_for_free_tail(NULL)
     , m_comp_event_channel(p_comp_event_channel)

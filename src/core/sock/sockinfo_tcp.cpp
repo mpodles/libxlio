@@ -63,10 +63,6 @@
 #include "tcp_seg_pool.h"
 #include "bind_no_port.h"
 
-extern "C" {
-  #include "dpu_statistics.h"
-}
-
 #define UNLOCK_RET(_ret)                                                                           \
     unlock_tcp_con();                                                                              \
     return _ret;
@@ -94,7 +90,6 @@ static std::set<uint16_t> unique_segments;
 tcp_timers_collection *g_tcp_timers_collection = NULL;
 thread_local thread_local_tcp_timers g_thread_local_tcp_timers;
 bind_no_port *g_bind_no_port = NULL;
-static int skt_id = 0;
 
 /*
  * The following socket options are inherited by a connected TCP socket from the listening socket:
@@ -304,6 +299,7 @@ sockinfo_tcp::sockinfo_tcp(int fd, int domain)
     , m_sysvar_tx_segs_batch_tcp(safe_mce_sys().tx_segs_batch_tcp)
     , m_sysvar_tcp_ctl_thread(safe_mce_sys().tcp_ctl_thread)
     , m_tcp_seg_list(nullptr)
+    , m_use_zc_buffers_cache(safe_mce_sys().use_zc_buffers_cache)
     , m_sysvar_rx_poll_on_tx_tcp(safe_mce_sys().rx_poll_on_tx_tcp)
     , m_sysvar_detailed_stats(safe_mce_sys().detailed_stats)
     , m_user_huge_page_mask(~((uint64_t)safe_mce_sys().user_huge_page_size - 1))
@@ -322,7 +318,6 @@ sockinfo_tcp::sockinfo_tcp(int fd, int domain)
     m_rx_cb_dropped_list.set_id("sockinfo_tcp (%p), fd = %d : m_rx_cb_dropped_list", this, m_fd);
     m_rx_ctl_packets_list.set_id("sockinfo_tcp (%p), fd = %d : m_rx_ctl_packets_list", this, m_fd);
     m_rx_ctl_reuse_list.set_id("sockinfo_tcp (%p), fd = %d : m_rx_ctl_reuse_list", this, m_fd);
-
     m_last_syn_tsc = 0;
 
     m_linger.l_linger = 0;
@@ -356,7 +351,7 @@ sockinfo_tcp::sockinfo_tcp(int fd, int domain)
     }
     tcp_err(&m_pcb, sockinfo_tcp::err_lwip_cb);
     tcp_sent(&m_pcb, sockinfo_tcp::ack_recvd_lwip_cb);
-    TAILQ_INIT(&m_pcb.pbuf_cache);
+    // TAILQ_INIT(&m_pcb.pbuf_cache);
 
     m_n_pbufs_rcvd = m_n_pbufs_freed = 0;
 
@@ -408,7 +403,6 @@ sockinfo_tcp::sockinfo_tcp(int fd, int domain)
     }
     si_tcp_logdbg("TCP PCB FLAGS: 0x%x", m_pcb.flags);
     si_tcp_logfunc("done");
-    _tcp_log_file = fopen(("/var/log/sock_Tcp"+std::to_string(skt_id)+".log").c_str(),"wb");
 }
 
 sockinfo_tcp::~sockinfo_tcp()
@@ -1334,6 +1328,7 @@ zc_fill_iov:
         }
         attr.length += p->len;
         p = p->next;
+        // probber_print(8, "max_seg", max_count, "count", count, "total_len", attr.length, "max_payload_sz", p_si_tcp->m_pcb.tso.max_payload_sz);
     }
     count++;
 
@@ -5677,13 +5672,30 @@ struct pbuf *sockinfo_tcp::tcp_tx_pbuf_alloc(void *p_conn, pbuf_type type, pbuf_
     sockinfo_tcp *p_si_tcp = (sockinfo_tcp *)(((struct tcp_pcb *)p_conn)->my_container);
     dst_entry_tcp *p_dst = (dst_entry_tcp *)(p_si_tcp->m_p_connected_dst_entry);
     mem_buf_desc_t *p_desc = NULL;
+    bool buffer_is_zcopy = type == PBUF_ZEROCOPY &&
+            ((desc->attr == PBUF_DESC_NONE) ||
+             (desc->attr == PBUF_DESC_MKEY) ||
+             (desc->attr == PBUF_DESC_NVME_TX));
+    // bool buffer_is_zcopy = p_desc && (p_desc->lwip_pbuf.pbuf.type == PBUF_ZEROCOPY) &&
+    //         ((p_desc->lwip_pbuf.pbuf.desc.attr == PBUF_DESC_NONE) ||
+    //          (p_desc->lwip_pbuf.pbuf.desc.attr == PBUF_DESC_MKEY) ||
+    //          p_desc->lwip_pbuf.pbuf.desc.attr == PBUF_DESC_NVME_TX);
 
+    PROBBER_PRINT("Allocating buffer of type:%d desc:%p and p_buff:%p, cache size:%d\n",
+              type, desc, p_buff, p_si_tcp->m_zc_buffers_cache.size());
+    if (buffer_is_zcopy && p_si_tcp->m_use_zc_buffers_cache && !p_si_tcp->m_zc_buffers_cache.empty()) {
+        p_desc = p_si_tcp->m_zc_buffers_cache.get_and_pop_front();
+        if (p_desc) {
+          p_si_tcp->tcp_tx_zc_alloc(p_desc);
+          memcpy(&p_desc->lwip_pbuf.pbuf.desc, desc,
+                 sizeof(p_desc->lwip_pbuf.pbuf.desc));
+          return (struct pbuf *)p_desc;
+        }
+    } 
     if (likely(p_dst)) {
         p_desc = p_dst->get_buffer(type, desc);
-        if (p_desc && (p_desc->lwip_pbuf.pbuf.type == PBUF_ZEROCOPY) &&
-            ((p_desc->lwip_pbuf.pbuf.desc.attr == PBUF_DESC_NONE) ||
-             (p_desc->lwip_pbuf.pbuf.desc.attr == PBUF_DESC_MKEY) ||
-             p_desc->lwip_pbuf.pbuf.desc.attr == PBUF_DESC_NVME_TX)) {
+        __log_info("Allocated p_desc:%p from dst_entry", p_desc);
+        if (buffer_is_zcopy) {
             /* Prepare error queue fields for send zerocopy */
             if (p_buff) {
                 /* It is a special case that can happen as a result
@@ -5711,7 +5723,6 @@ struct pbuf *sockinfo_tcp::tcp_tx_pbuf_alloc(void *p_conn, pbuf_type type, pbuf_
 void sockinfo_tcp::tcp_rx_pbuf_free(struct pbuf *p_buff)
 {
     mem_buf_desc_t *desc = (mem_buf_desc_t *)p_buff;
-    __log_warn("RX freeing pbuf payload:%p mem_buf_desc:%p", p_buff->payload, desc->p_buffer);
 
     if (desc->p_desc_owner != NULL && p_buff->type != PBUF_ZEROCOPY) {
         desc->p_desc_owner->mem_buf_rx_release(desc);
@@ -5726,11 +5737,22 @@ void sockinfo_tcp::tcp_tx_pbuf_free(void *p_conn, struct pbuf *p_buff)
     sockinfo_tcp *p_si_tcp = (sockinfo_tcp *)(((struct tcp_pcb *)p_conn)->my_container);
     dst_entry_tcp *p_dst = (dst_entry_tcp *)(p_si_tcp->m_p_connected_dst_entry);
 
+    mem_buf_desc_t *p_desc = (mem_buf_desc_t *)p_buff;
+
+    //If it's a zerocopy buffer then we can just do it's callback and cache it
+    if (p_si_tcp->m_use_zc_buffers_cache && p_desc && p_desc->m_flags & mem_buf_desc_t::ZCOPY) {
+        PROBBER_PRINT("Putting mem_buffer %p into cache\n", p_desc);
+        p_desc->tx.zc.callback(p_desc);
+        // p_desc->lwip_pbuf.pbuf.flags = 0;
+        // p_desc->lwip_pbuf.pbuf.ref = 0;
+        // p_desc->lwip_pbuf.pbuf.desc.attr = PBUF_DESC_NONE;
+        p_si_tcp->m_zc_buffers_cache.push_back(p_desc);
+        return;
+    }
+
     if (likely(p_dst)) {
         p_dst->put_buffer((mem_buf_desc_t *)p_buff);
     } else if (p_buff) {
-        mem_buf_desc_t *p_desc = (mem_buf_desc_t *)p_buff;
-
         // potential race, ref is protected here by tcp lock, and in ring by ring_tx lock
         if (likely(p_desc->lwip_pbuf_get_ref_count())) {
             p_desc->lwip_pbuf_dec_ref_count();
@@ -5754,6 +5776,7 @@ mem_buf_desc_t *sockinfo_tcp::tcp_tx_zc_alloc(mem_buf_desc_t *p_desc)
     p_desc->tx.zc.ctx = (void *)this;
     p_desc->tx.zc.callback = tcp_tx_zc_callback;
 
+    // TODO: what does this if-clause achieve? either way m_last_zcdesc is set to p_desc 
     if (m_last_zcdesc && (m_last_zcdesc != p_desc) && (m_last_zcdesc->lwip_pbuf.pbuf.ref > 0) &&
         (m_last_zcdesc->tx.zc.id == p_desc->tx.zc.id)) {
         m_last_zcdesc->tx.zc.len = m_last_zcdesc->lwip_pbuf.pbuf.len;
@@ -5761,6 +5784,7 @@ mem_buf_desc_t *sockinfo_tcp::tcp_tx_zc_alloc(mem_buf_desc_t *p_desc)
     }
     m_last_zcdesc = p_desc;
 
+    __log_info("Assigned:%p to m_last_zdesc", p_desc);
     return p_desc;
 }
 

@@ -41,6 +41,7 @@
 #include <stdint.h>
 #include <arpa/inet.h>
 
+#include "dpu_statistics.h"
 #ifdef HAVE_CONFIG_H
 #include "config.h"
 #endif

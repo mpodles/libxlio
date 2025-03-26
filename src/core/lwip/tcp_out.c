@@ -630,6 +630,8 @@ err_t tcp_write(struct tcp_pcb *pcb, const void *arg, u32_t len, u16_t apiflags,
             tcp_tx_pbuf_free(pcb, p);
             goto memerr;
         }
+
+        PROBBER_PRINT("Created new segment:%p with len %u\n", seg, seg->len);
 #if TCP_OVERSIZE_DBGCHECK
         seg->oversize_left = oversize;
 #endif /* TCP_OVERSIZE_DBGCHECK */
@@ -958,6 +960,8 @@ static void tcp_tso_segment(struct tcp_pcb *pcb, struct tcp_seg *seg, u32_t wnd)
 
     /* Ignore retransmitted segments and special segments
      */
+    PROBBER_PRINT("TSO splitting max payload size %u because of window:%u, segment seqno:%u and last ack:%u\n",
+                  max_payload_sz, wnd, seg->seqno, pcb->lastack);
     if (TCP_SEQ_LT(seg->seqno, pcb->snd_nxt) ||
         (seg->flags & (TF_SEG_OPTS_TSO | TF_SEG_OPTS_DUMMY_MSG | TF_SEG_OPTS_NOMERGE)) ||
         ((TCPH_FLAGS(seg->tcphdr) & (~(TCP_ACK | TCP_PSH))) != 0)) {
@@ -1007,6 +1011,7 @@ static void tcp_tso_segment(struct tcp_pcb *pcb, struct tcp_seg *seg, u32_t wnd)
              */
             external_tcp_seg_free(pcb, cur_seg);
         }
+        PROBBER_PRINT("TSO current segment %p length %u, next segment %p len: %u. Split total length %u \n", cur_seg, cur_seg->len, cur_seg->next, cur_seg->next->len, tot_len );
         cur_seg = seg->next;
     }
 

@@ -590,6 +590,11 @@ private:
     xlio_desc_list_t m_rx_pkt_ready_list;
     xlio_desc_list_t m_rx_cb_dropped_list;
 
+    // When LWIP allocates new ZC pbufs they should be fetched from this cache
+    // rather than going unnecessarily to buffer_pool
+    bool m_use_zc_buffers_cache;
+    xlio_desc_list_t m_zc_buffers_cache;
+
     lock_spin_recursive m_rx_ctl_packets_list_lock;
     tscval_t m_last_syn_tsc;
     xlio_desc_list_t m_rx_ctl_packets_list;
@@ -607,9 +612,6 @@ private:
     // stats
     uint64_t m_n_pbufs_rcvd;
     uint64_t m_n_pbufs_freed;
-    // Map of buffers with their sizes and time until they were returned
-    // std::map<void*, std::pair<uint64_t, uint64_t>> m_buffers_usage;
-    FILE* _tcp_log_file;
 };
 typedef struct tcp_seg tcp_seg;
 

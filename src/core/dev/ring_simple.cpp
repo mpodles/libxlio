@@ -39,9 +39,6 @@
 #if defined(DEFINED_DIRECT_VERBS)
 #include "dev/qp_mgr_eth_mlx5.h"
 #include "dev/qp_mgr_eth_mlx5_dpcp.h"
-extern "C" {
-  #include "dpu_statistics.h"
-}
 #endif
 
 #undef MODULE_NAME
@@ -988,6 +985,7 @@ void ring_simple::return_tx_pool_to_global_pool()
 
 int ring_simple::put_tx_buffer_helper(mem_buf_desc_t *buff)
 {
+    ring_logwarn("tx mem_buff %p with ref count %d is getting freed", buff, buff->lwip_pbuf.pbuf.ref);
     if (buff->tx.dev_mem_length) {
         m_p_qp_mgr->dm_release_data(buff);
     }
@@ -1194,6 +1192,7 @@ uint32_t ring_simple::get_tx_user_lkey(void *addr, size_t length, void *p_mappin
      *
      * TODO In the 1st mode we don't support memory deregistration.
      */
+    ring_logerr("Mapping %p", p_mapping);
     if (p_mapping == NULL) {
         auto iter = m_user_lkey_map.find(addr);
         if (iter != m_user_lkey_map.end()) {

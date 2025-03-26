@@ -310,6 +310,7 @@ public:
 
         list_node<T, offset> *node_obj = GET_NODE(obj, T, offset);
         if (unlikely(node_obj->is_list_member())) {
+            PROBBER_PRINT_STACK("Buffer %p already a member\n", obj);
             VLIST_DEBUG_PRINT_ERROR_IS_MEMBER;
         }
 
@@ -328,6 +329,7 @@ public:
 
         list_node<T, offset> *node_obj = GET_NODE(obj, T, offset);
         if (unlikely(node_obj->is_list_member())) {
+            PROBBER_PRINT_STACK("Buffer %p already a member\n", obj);
             VLIST_DEBUG_PRINT_ERROR_IS_MEMBER;
         }
 

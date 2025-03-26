@@ -501,6 +501,7 @@ public:
     bool deferred_close;
     bool tcp_abort_on_close;
     bool rx_poll_on_tx_tcp;
+    bool use_zc_buffers_cache;
     bool detailed_stats;
     bool rx_cq_wait_ctrl;
     hyper_t hypervisor;
@@ -712,6 +713,7 @@ extern mce_sys_var &safe_mce_sys();
 #define SYS_VAR_DEFERRED_CLOSE                 "XLIO_DEFERRED_CLOSE"
 #define SYS_VAR_TCP_ABORT_ON_CLOSE             "XLIO_TCP_ABORT_ON_CLOSE"
 #define SYS_VAR_RX_POLL_ON_TX_TCP              "XLIO_RX_POLL_ON_TX_TCP"
+#define SYS_VAR_USE_ZC_BUFFERS_CACHE           "XLIO_USE_ZC_BUFFERS_CACHE"
 #define SYS_VAR_RX_CQ_WAIT_CTRL                "XLIO_RX_CQ_WAIT_CTRL"
 #define SYS_VAR_DETAILED_STATS                 "XLIO_DETAILED_STATS"
 #define SYS_VAR_TRIGGER_DUMMY_SEND_GETSOCKNAME "XLIO_TRIGGER_DUMMY_SEND_GETSOCKNAME"
