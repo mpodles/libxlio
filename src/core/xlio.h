@@ -771,6 +771,48 @@ void xlio_socket_buf_free(xlio_socket_t sock, struct xlio_buf *buf);
  */
 void xlio_poll_group_buf_free(xlio_poll_group_t group, struct xlio_buf *buf);
 
+/**
+ * @brief Get the memory key (lkey) from a receive buffer
+ *
+ * Returns the InfiniBand local key (lkey) for the memory region containing
+ * the receive buffer. This lkey can be used with xlio_socket_send() to send
+ * the buffer's data without copying.
+ *
+ * @param buf The buffer descriptor (from RX callback)
+ * @return The buffer's lkey, or 0 if buffer is invalid
+ *
+ * @note Essential for zero-copy RX-to-TX forwarding
+ */
+uint32_t xlio_socket_buf_get_mkey(struct xlio_buf *buf);
+
+/**
+ * @brief Get the Protection Domain for a receive buffer
+ *
+ * Returns the InfiniBand Protection Domain (PD) that the receive buffer
+ * is registered with. This PD must match the socket's PD for zero-copy
+ * send operations to work.
+ *
+ * @param buf The buffer descriptor (from RX callback)
+ * @return The buffer's Protection Domain, or NULL if invalid
+ */
+struct ibv_pd *xlio_socket_buf_get_pd(struct xlio_buf *buf);
+
+/**
+ * @brief Get the data pointer from a receive buffer
+ *
+ * @param buf The buffer descriptor (from RX callback)
+ * @return Pointer to buffer data, or NULL if invalid
+ */
+void *xlio_socket_buf_get_data(struct xlio_buf *buf);
+
+/**
+ * @brief Get the total size of a receive buffer
+ *
+ * @param buf The buffer descriptor (from RX callback)
+ * @return Buffer size in bytes, or 0 if invalid
+ */
+size_t xlio_socket_buf_get_size(struct xlio_buf *buf);
+
 /** @} */ // end of xlio_rx group
 
 /** @} */ // end of xlio_ultra_api group

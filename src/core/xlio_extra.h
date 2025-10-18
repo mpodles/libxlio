@@ -124,6 +124,10 @@ struct __attribute__((packed)) xlio_api_t {
     void (*xlio_socket_flush)(xlio_socket_t sock);
     void (*xlio_socket_buf_free)(xlio_socket_t sock, struct xlio_buf *buf);
     void (*xlio_poll_group_buf_free)(xlio_poll_group_t group, struct xlio_buf *buf);
+    uint32_t (*xlio_socket_buf_get_mkey)(struct xlio_buf *buf);
+    struct ibv_pd *(*xlio_socket_buf_get_pd)(struct xlio_buf *buf);
+    void *(*xlio_socket_buf_get_data)(struct xlio_buf *buf);
+    size_t (*xlio_socket_buf_get_size)(struct xlio_buf *buf);
 };
 
 /*
