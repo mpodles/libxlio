@@ -90,8 +90,11 @@ err:
         delete m_p_ibv_device_attr;
     }
 
+    /* ZERO-COPY FIX: Don't deallocate shared PDs even on error
+     * Once added to the shared map, PDs are never deallocated */
     if (m_p_ibv_pd) {
-        ibv_dealloc_pd(m_p_ibv_pd);
+        ibch_logdbg("Skipping PD deallocation on error for shared PD %p", m_p_ibv_pd);
+        m_p_ibv_pd = nullptr;
     }
 
     if (m_p_adapter) {
@@ -115,12 +118,10 @@ ib_ctx_handler::~ib_ctx_handler()
         mem_dereg(iter->first);
     }
     if (m_p_ibv_pd) {
-        IF_VERBS_FAILURE_EX(ibv_dealloc_pd(m_p_ibv_pd), EIO)
-        {
-            ibch_logdbg("pd deallocation failure (errno=%d %m)", errno);
-        }
-        ENDIF_VERBS_FAILURE;
-        VALGRIND_MAKE_MEM_UNDEFINED(m_p_ibv_pd, sizeof(struct ibv_pd));
+        /* ZERO-COPY FIX: Don't deallocate shared PDs - they're managed globally
+         * The shared PDs will be cleaned up when the process exits */
+        ibch_logdbg("Skipping PD deallocation for shared PD %p (context %p)", 
+                    m_p_ibv_pd, m_p_ibv_context);
         m_p_ibv_pd = nullptr;
     }
 
@@ -265,12 +266,29 @@ dpcp::adapter *ib_ctx_handler::set_dpcp_adapter()
                     goto err;
                 }
 
-                pd = ibv_alloc_pd(ctx);
-                if (!pd) {
-                    ibch_logerr("failed pd allocation for %p context (errno=%d %m) ", ctx, errno);
-                    delete adapter;
-                    goto err;
+                /* ZERO-COPY FIX: Check for shared PD in this context first */
+                static std::unordered_map<struct ibv_context*, struct ibv_pd*> s_shared_pd_map;
+                static lock_spin s_shared_pd_lock("shared_pd_lock");
+                
+                s_shared_pd_lock.lock();
+                auto it = s_shared_pd_map.find(ctx);
+                if (it != s_shared_pd_map.end()) {
+                    /* Reuse existing PD for this context */
+                    pd = it->second;
+                    ibch_logdbg("Reusing shared PD %p for context %p", pd, ctx);
+                } else {
+                    /* Create new PD and share it */
+                    pd = ibv_alloc_pd(ctx);
+                    if (!pd) {
+                        s_shared_pd_lock.unlock();
+                        ibch_logerr("failed pd allocation for %p context (errno=%d %m) ", ctx, errno);
+                        delete adapter;
+                        goto err;
+                    }
+                    s_shared_pd_map[ctx] = pd;
+                    ibch_logdbg("Created shared PD %p for context %p", pd, ctx);
                 }
+                s_shared_pd_lock.unlock();
 
                 mlx5_obj.pd.in = pd;
                 mlx5dv_pd out_pd;

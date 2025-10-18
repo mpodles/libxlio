@@ -105,6 +105,13 @@ struct xlio_api_t *extra_api()
         SET_EXTRA_API(xlio_socket_buf_free, xlio_socket_buf_free, XLIO_EXTRA_API_XLIO_ULTRA);
         SET_EXTRA_API(xlio_poll_group_buf_free, xlio_poll_group_buf_free,
                       XLIO_EXTRA_API_XLIO_ULTRA);
+        SET_EXTRA_API(xlio_socket_buf_get_mkey, xlio_socket_buf_get_mkey,
+                      XLIO_EXTRA_API_XLIO_ULTRA);
+        SET_EXTRA_API(xlio_socket_buf_get_pd, xlio_socket_buf_get_pd, XLIO_EXTRA_API_XLIO_ULTRA);
+        SET_EXTRA_API(xlio_socket_buf_get_data, xlio_socket_buf_get_data,
+                      XLIO_EXTRA_API_XLIO_ULTRA);
+        SET_EXTRA_API(xlio_socket_buf_get_size, xlio_socket_buf_get_size,
+                      XLIO_EXTRA_API_XLIO_ULTRA);
     }
 
     return &xlio_api;
@@ -375,6 +382,75 @@ extern "C" void xlio_poll_group_buf_free(xlio_poll_group_t group, struct xlio_bu
 {
     NOT_IN_USE(group);
     xlio_buf_free(buf);
+}
+
+extern "C" uint32_t xlio_socket_buf_get_mkey(struct xlio_buf *buf)
+{
+    if (!buf) {
+        return 0;
+    }
+
+    mem_buf_desc_t *desc = mem_buf_desc_t::from_xlio_buf(buf);
+    if (!desc) {
+        return 0;
+    }
+
+    /* ZERO-COPY FIX: Handle STRQ stride buffers
+     * Stride buffers don't have their own lkey - they're views into a parent buffer */
+    if (desc->lwip_pbuf.desc.attr == PBUF_DESC_STRIDE && desc->lwip_pbuf.desc.mdesc) {
+        /* Get lkey from parent buffer */
+        mem_buf_desc_t *parent = reinterpret_cast<mem_buf_desc_t *>(desc->lwip_pbuf.desc.mdesc);
+        return parent->lkey;
+    }
+
+    return desc->lkey;
+}
+
+extern "C" struct ibv_pd *xlio_socket_buf_get_pd(struct xlio_buf *buf)
+{
+    if (!buf) {
+        return nullptr;
+    }
+
+    mem_buf_desc_t *desc = mem_buf_desc_t::from_xlio_buf(buf);
+    if (!desc) {
+        return nullptr;
+    }
+
+    /* ZERO-COPY FIX: Handle STRQ stride buffers
+     * Get owner from parent buffer if this is a stride */
+    ring_slave *owner = desc->p_desc_owner;
+    if (!owner && desc->lwip_pbuf.desc.attr == PBUF_DESC_STRIDE && desc->lwip_pbuf.desc.mdesc) {
+        mem_buf_desc_t *parent = reinterpret_cast<mem_buf_desc_t *>(desc->lwip_pbuf.desc.mdesc);
+        owner = parent->p_desc_owner;
+    }
+
+    if (!owner) {
+        return nullptr;
+    }
+
+    ib_ctx_handler *ctx = owner->get_ctx(0);
+    return ctx ? ctx->get_ibv_pd() : nullptr;
+}
+
+extern "C" void *xlio_socket_buf_get_data(struct xlio_buf *buf)
+{
+    if (!buf) {
+        return nullptr;
+    }
+
+    mem_buf_desc_t *desc = mem_buf_desc_t::from_xlio_buf(buf);
+    return desc ? desc->p_buffer : nullptr;
+}
+
+extern "C" size_t xlio_socket_buf_get_size(struct xlio_buf *buf)
+{
+    if (!buf) {
+        return 0;
+    }
+
+    mem_buf_desc_t *desc = mem_buf_desc_t::from_xlio_buf(buf);
+    return desc ? desc->sz_buffer : 0;
 }
 
 extern "C" int xlio_socket_send(xlio_socket_t sock, const void *data, size_t len,
