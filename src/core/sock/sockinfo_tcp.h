@@ -599,6 +599,20 @@ private:
     inline event_handler_manager *get_event_mgr();
 
 public:
+    /**
+     * Zero-copy receive for kTLS/UTLS-RX sockets.
+     *
+     * Drains up to max_segs consecutive application-data buffers from
+     * m_rx_pkt_ready_list without copying.  Each returned segment has its
+     * lwip_pbuf refcount bumped; the caller must call xlio_recv_zc_release()
+     * when done.  Stops (returns what was gathered so far) if the next buffer
+     * has a tls_type other than XLIO_TLS_RT_APPLICATION_DATA, returning
+     * -ENODATA when no segments were filled.
+     *
+     * Returns number of segments filled (>= 1) or a negative errno value.
+     */
+    int recv_zc_impl(struct xlio_zc_seg *segs, int max_segs);
+
     static const int CONNECT_DEFAULT_TIMEOUT_MS = 10000;
 
     list_node<sockinfo_tcp, sockinfo_tcp::accepted_conns_node_offset> accepted_conns_node;

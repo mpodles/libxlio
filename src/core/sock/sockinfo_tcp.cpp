@@ -2552,6 +2552,134 @@ bool sockinfo_tcp::rx_tls_msg(struct msghdr *__msg, mem_buf_desc_t *out_buf)
     return false;
 }
 
+int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
+{
+    /*
+     * This function must be called from the application thread (the same
+     * thread that drives the libev loop in nghttpx).  We take the TCP
+     * connection lock only for the list splice, then release it; actual
+     * buffer processing is done without the lock because the buffers are
+     * now exclusively owned by the caller (via ref-count bump).
+     */
+
+#ifndef DEFINED_UTLS
+    /* If XLIO was built without UTLS support, this path makes no sense. */
+    errno = ENOTSUP;
+    return -1;
+#else
+
+    if (!segs || max_segs <= 0) {
+        errno = EINVAL;
+        return -1;
+    }
+
+    std::lock_guard<decltype(m_tcp_con_lock)> lock(m_tcp_con_lock);
+
+    if (m_rx_pkt_ready_list.empty()) {
+        errno = EAGAIN;
+        return -1;
+    }
+
+    /*
+     * Peek at the front buffer's TLS record type.  If it is not application
+     * data (0x17) the caller must process it through SSL_read first (e.g.
+     * a TLS 1.3 key-update or alert record).  We signal this with ENODATA.
+     */
+    mem_buf_desc_t *head = m_rx_pkt_ready_list.front();
+    if (head->rx.tls_type != 0 && head->rx.tls_type != XLIO_TLS_RT_APPLICATION_DATA) {
+        errno = ENODATA;
+        return -1;
+    }
+
+    int n = 0;
+    size_t total_bytes = 0;
+
+    while (n < max_segs && !m_rx_pkt_ready_list.empty()) {
+        mem_buf_desc_t *desc = m_rx_pkt_ready_list.front();
+
+        /*
+         * Stop as soon as we reach a non-application-data TLS record.
+         * The caller will handle the switch back to SSL_read.
+         */
+        if (desc->rx.tls_type != 0 && desc->rx.tls_type != XLIO_TLS_RT_APPLICATION_DATA) {
+            break;
+        }
+
+        /*
+         * lwip_pbuf.payload points to the decrypted application data
+         * (transport headers and TLS record header already stripped).
+         * lwip_pbuf.len is the byte count of that payload.
+         *
+         * With UTLS_RX the NIC wrote plaintext here; this IS the HTTP/2
+         * bytestream starting at an arbitrary frame boundary.
+         *
+         * Partial-read accounting: m_rx_pkt_ready_offset tracks how many
+         * leading bytes of the front buffer have already been consumed by a
+         * previous partial read.  We incorporate that offset here so the
+         * segment descriptor is always accurate.
+         */
+        size_t offset = (n == 0) ? m_rx_pkt_ready_offset : 0;
+        size_t len = desc->lwip_pbuf.len - offset;
+
+        if (len == 0) {
+            /* Shouldn't happen, but skip empty buffers defensively. */
+            m_rx_pkt_ready_list.pop_front();
+            --m_n_rx_pkt_ready_list_count;
+            reuse_buffer(desc);
+            continue;
+        }
+
+        /*
+         * Bump lwip ref-count so the buffer survives after we remove it
+         * from m_rx_pkt_ready_list.  The caller releases it via
+         * xlio_recv_zc_release() → xlio_buf_free() → reclaim_recv_buffers(),
+         * which decrements the ref-count and returns the buffer to the pool
+         * when it reaches zero.
+         */
+        desc->lwip_pbuf_inc_ref_count();
+
+        m_rx_pkt_ready_list.pop_front();
+        --m_n_rx_pkt_ready_list_count;
+        m_rx_ready_byte_count -= desc->lwip_pbuf.len;
+
+        /*
+         * After the first (potentially partial) buffer we always start at
+         * offset 0 for subsequent ones.
+         */
+        m_rx_pkt_ready_offset = 0;
+
+        segs[n].data     = static_cast<uint8_t *>(desc->lwip_pbuf.payload) + offset;
+        segs[n].len      = len;
+        segs[n].buf      = desc->to_xlio_buf();
+        segs[n].tls_type = desc->rx.tls_type;
+
+        total_bytes += len;
+        ++n;
+    }
+
+    if (n == 0) {
+        /* Only non-app-data buffers remain; ENODATA already returned above. */
+        errno = EAGAIN;
+        return -1;
+    }
+
+    /*
+     * TCP receive window accounting.  tcp_recved() tells lwIP we consumed
+     * these bytes so it can send a window-update ACK to the sender.  This
+     * must happen while we still hold m_tcp_con_lock, before we release it.
+     */
+    m_rcvbuff_current -= static_cast<int>(total_bytes);
+    if (m_rcvbuff_non_tcp_recved > 0) {
+        uint32_t to_ack = static_cast<uint32_t>(
+            std::min(static_cast<size_t>(m_rcvbuff_non_tcp_recved), total_bytes));
+        tcp_recved(&m_pcb, to_ack, true);
+        m_rcvbuff_non_tcp_recved -= static_cast<int>(to_ack);
+    }
+
+    return n;
+#endif /* DEFINED_UTLS */
+}
+
 void sockinfo_tcp::rx_data_recvd(uint32_t tot_size)
 {
     // We need to have this lock because this method can be called from a worker thread

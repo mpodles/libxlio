@@ -112,6 +112,10 @@ struct xlio_api_t *extra_api()
                       XLIO_EXTRA_API_XLIO_ULTRA);
         SET_EXTRA_API(xlio_socket_buf_get_size, xlio_socket_buf_get_size,
                       XLIO_EXTRA_API_XLIO_ULTRA);
+
+        /* Zero-copy receive for BSD sockets with kTLS/UTLS-RX. */
+        SET_EXTRA_API(xlio_recv_zc_fd, xlio_recv_zc_fd, XLIO_EXTRA_API_RECV_ZC);
+        SET_EXTRA_API(xlio_recv_zc_release, xlio_recv_zc_release, XLIO_EXTRA_API_RECV_ZC);
     }
 
     return &xlio_api;
@@ -369,6 +373,56 @@ static void xlio_buf_free(struct xlio_buf *buf)
     bool ret = rng->reclaim_recv_buffers(desc);
     if (unlikely(!ret)) {
         g_buffer_pool_rx_ptr->put_buffer_after_deref_thread_safe(desc);
+    }
+}
+
+/*
+ * ---------------------------------------------------------------------------
+ * Zero-copy receive for BSD sockets with kTLS / UTLS-RX
+ * ---------------------------------------------------------------------------
+ *
+ * xlio_recv_zc_fd() resolves the file descriptor to its sockinfo_tcp and
+ * delegates to sockinfo_tcp::recv_zc_impl().  This keeps the hot-path logic
+ * inside the sockinfo where all the state lives.
+ *
+ * xlio_recv_zc_release() is intentionally simple: it follows the same path
+ * as xlio_buf_free() used by the Ultra API.  No fd needed because the
+ * mem_buf_desc_t already carries p_desc_owner.
+ */
+
+extern "C" EXPORT_SYMBOL int xlio_recv_zc_fd(int fd, struct xlio_zc_seg *segs, int max_segs)
+{
+    if (!g_p_fd_collection) {
+        errno = ENOTSUP;
+        return -1;
+    }
+
+    /*
+     * Look up the sockinfo for this fd.  get_sockfd() is a plain array
+     * lookup with no refcount overhead — the socket lifetime is pinned by
+     * the application's file descriptor; it cannot be destroyed while the
+     * fd is open.
+     */
+    sockinfo *si_base = g_p_fd_collection->get_sockfd(fd);
+    if (!si_base) {
+        errno = ENOTSUP;
+        return -1;
+    }
+
+    /* We only support TCP sockets. */
+    sockinfo_tcp *si = dynamic_cast<sockinfo_tcp *>(si_base);
+    if (!si) {
+        errno = ENOTSUP;
+        return -1;
+    }
+
+    return si->recv_zc_impl(segs, max_segs);
+}
+
+extern "C" EXPORT_SYMBOL void xlio_recv_zc_release(struct xlio_buf *buf)
+{
+    if (buf) {
+        xlio_buf_free(buf);
     }
 }
 

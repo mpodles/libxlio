@@ -37,6 +37,12 @@ enum {
     XLIO_EXTRA_API_THREAD_OFFLOAD = (1 << 4),
     XLIO_EXTRA_API_DUMP_FD_STATS = (1 << 11),
     XLIO_EXTRA_API_XLIO_ULTRA = (1 << 13),
+    /*
+     * Zero-copy receive for BSD sockets with kTLS/UTLS-RX.
+     * Indicates that xlio_recv_zc_fd() and xlio_recv_zc_release() are
+     * populated in xlio_api_t.
+     */
+    XLIO_EXTRA_API_RECV_ZC = (1 << 14),
 };
 
 struct __attribute__((packed)) xlio_api_t {
@@ -115,6 +121,38 @@ struct __attribute__((packed)) xlio_api_t {
     struct ibv_pd *(*xlio_socket_buf_get_pd)(struct xlio_buf *buf);
     void *(*xlio_socket_buf_get_data)(struct xlio_buf *buf);
     size_t (*xlio_socket_buf_get_size)(struct xlio_buf *buf);
+
+    /*
+     * Zero-copy receive for BSD sockets with kTLS/UTLS-RX (cap: XLIO_EXTRA_API_RECV_ZC).
+     *
+     * xlio_recv_zc_fd() - obtain direct pointers into XLIO DMA receive buffers.
+     *
+     *   fd       - a connected TCP socket fd managed by XLIO that has completed
+     *              a kTLS handshake with UTLS_RX enabled.
+     *   segs     - caller-allocated array of xlio_zc_seg; filled on success.
+     *   max_segs - capacity of segs[].
+     *
+     *   Returns the number of segments filled (>= 1), or -1 on error:
+     *     errno = EAGAIN   - no data available right now (non-blocking).
+     *     errno = ENOTSUP  - fd is not an XLIO-managed UTLS_RX socket.
+     *     errno = ENODATA  - the next queued TLS record has tls_type != 0x17;
+     *                        caller must process it via SSL_read before retrying.
+     *
+     *   Segments are consecutive buffers from the socket's ready-list, stopping
+     *   at the first buffer whose tls_type differs from XLIO_TLS_RT_APPLICATION_DATA.
+     *   Each returned buffer has its reference count bumped and must be released
+     *   with xlio_recv_zc_release().
+     *
+     *   TCP flow-control (tcp_recved / ACK) is handled internally.
+     *
+     * xlio_recv_zc_release() - return one segment buffer back to XLIO.
+     *
+     *   Safe to call immediately after nghttp2_session_mem_recv2() returns,
+     *   because that function processes all callbacks synchronously before
+     *   returning; by that point the DMA buffer contents have been consumed.
+     */
+    int  (*xlio_recv_zc_fd)(int fd, struct xlio_zc_seg *segs, int max_segs);
+    void (*xlio_recv_zc_release)(struct xlio_buf *buf);
 };
 
 /*

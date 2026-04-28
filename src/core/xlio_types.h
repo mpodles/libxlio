@@ -421,4 +421,48 @@ struct xlio_socket_send_attr {
 
 /** @} */ // end of xlio_ultra_api group
 
+/**
+ * @defgroup xlio_recv_zc Zero-copy receive for kTLS/UTLS-RX sockets
+ *
+ * These types support the xlio_recv_zc_fd() / xlio_recv_zc_release() API,
+ * which allows an application to obtain direct pointers into XLIO's
+ * DMA-mapped receive buffers without any memcpy.
+ *
+ * Intended use: BSD sockets that have completed a TLS handshake with
+ * hardware TLS offload (UTLS_RX) enabled.  In that case the NIC decrypts
+ * TLS records during DMA and the resulting plaintext resides in the XLIO
+ * buffer.  Calling xlio_recv_zc_fd() returns descriptors pointing into that
+ * memory.  The application feeds the pointers directly into its parser
+ * (e.g. nghttp2_session_mem_recv2) and then releases via
+ * xlio_recv_zc_release().
+ *
+ * @{
+ */
+
+/** TLS record content type: application data (RFC 8446). */
+#define XLIO_TLS_RT_APPLICATION_DATA 0x17
+
+/**
+ * @brief Descriptor for a single zero-copy receive segment.
+ *
+ * data     - Pointer into XLIO's DMA buffer; valid until xlio_recv_zc_release()
+ *            is called on buf.  With UTLS_RX this is decrypted plaintext with
+ *            all transport and TLS record headers already stripped.
+ * len      - Length of the usable data at *data.
+ * buf      - Opaque handle that keeps the buffer alive; must be returned to
+ *            XLIO via xlio_recv_zc_release() when the caller is done.
+ * tls_type - TLS record content type.  XLIO_TLS_RT_APPLICATION_DATA (0x17)
+ *            for ordinary application data.  Any other value indicates a
+ *            non-data record (alert, handshake, key-update) that must be
+ *            processed through SSL_read instead of this API.
+ */
+struct xlio_zc_seg {
+    void            *data;
+    size_t           len;
+    struct xlio_buf *buf;
+    uint8_t          tls_type;
+};
+
+/** @} */ // end of xlio_recv_zc group
+
 #endif /* XLIO_TYPES_H */
