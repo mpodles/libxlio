@@ -2581,12 +2581,30 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
     }
 
     /*
-     * Peek at the front buffer's TLS record type.  If it is not application
-     * data (0x17) the caller must process it through SSL_read first (e.g.
-     * a TLS 1.3 key-update or alert record).  We signal this with ENODATA.
+     * Peek at the front buffer's TLS record type.
+     *
+     * tls_type is set by the UTLS_RX hardware offload path: the NIC stamps
+     * each decrypted TLS record with its content type so we can distinguish
+     * application data (0x17) from control records (alert, key_update, etc.).
+     *
+     * tls_type == 0 means UTLS_RX is NOT active on this socket.  The buffer
+     * contains raw ciphertext (without kTLS) or possibly software-kTLS
+     * plaintext that went through the kernel rather than XLIO's receive ring.
+     * Either way, we must NOT hand these bytes to the application as if they
+     * were HTTP/2 plaintext.  Return ENOTSUP so the caller falls back to
+     * SSL_read permanently.
      */
     mem_buf_desc_t *head = m_rx_pkt_ready_list.front();
-    if (head->rx.tls_type != 0 && head->rx.tls_type != XLIO_TLS_RT_APPLICATION_DATA) {
+    if (head->rx.tls_type == 0) {
+        /* Not a UTLS_RX socket — buffers contain ciphertext or non-XLIO data. */
+        fprintf(stderr,
+                "[zc-trace][xlio] recv_zc_impl fd=%d: tls_type=0, UTLS_RX not active"
+                " → ENOTSUP (falling back to SSL_read permanently)\n", m_fd);
+        errno = ENOTSUP;
+        return -1;
+    }
+    if (head->rx.tls_type != XLIO_TLS_RT_APPLICATION_DATA) {
+        /* Non-app-data record (alert, key_update etc.): let SSL_read handle it. */
         errno = ENODATA;
         return -1;
     }
@@ -2653,6 +2671,12 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
         segs[n].buf      = desc->to_xlio_buf();
         segs[n].tls_type = desc->rx.tls_type;
 
+        fprintf(stderr,
+                "[zc-trace][xlio] seg[%d] fd=%d payload=%p len=%zu type=%d\n",
+                n, m_fd,
+                (void *)desc->lwip_pbuf.payload, len,
+                (int)desc->rx.tls_type);
+
         total_bytes += len;
         ++n;
     }
@@ -2675,6 +2699,33 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
         tcp_recved(&m_pcb, to_ack, true);
         m_rcvbuff_non_tcp_recved -= static_cast<int>(to_ack);
     }
+    /*
+     * Zero-copy deadlock prevention: if non_tcp_recved > total_bytes, the
+     * remaining overflow bytes are still unACKed.  With recv_zc we only
+     * surface COMPLETE TLS records, so an incomplete record sitting in the
+     * TCP reassembly buffer will never appear in the ready list — and
+     * recv_zc will keep returning EAGAIN.  Meanwhile, the TCP window stays
+     * closed because tcp_recved hasn't been called for those bytes, so the
+     * backend can't send the rest of the TLS record.  Break the deadlock by
+     * proactively opening the window for all remaining overflow bytes up to
+     * the available buffer space.
+     */
+    if (m_rcvbuff_non_tcp_recved > 0) {
+        int space = m_rcvbuff_max - m_rcvbuff_current;
+        if (space > 0) {
+            int extra = std::min(m_rcvbuff_non_tcp_recved, space);
+            tcp_recved(&m_pcb, static_cast<uint32_t>(extra), true);
+            m_rcvbuff_non_tcp_recved -= extra;
+            fprintf(stderr,
+                    "[zc-trace][xlio] recv_zc window-fix fd=%d extra_ack=%d"
+                    " remaining_non_tcp=%d space=%d\n",
+                    m_fd, extra, m_rcvbuff_non_tcp_recved, space);
+        }
+    }
+
+    fprintf(stderr,
+            "[zc-trace][xlio] recv_zc fd=%d n=%d total=%zu rcvbuff=%d\n",
+            m_fd, n, total_bytes, m_rcvbuff_current);
 
     return n;
 #endif /* DEFINED_UTLS */

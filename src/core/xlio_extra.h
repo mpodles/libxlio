@@ -43,6 +43,24 @@ enum {
      * populated in xlio_api_t.
      */
     XLIO_EXTRA_API_RECV_ZC = (1 << 14),
+    /*
+     * Convert an existing fd-based socket to an xlio_socket_t handle without
+     * disrupting the connection.  Indicates that xlio_socket_from_fd() is
+     * populated in xlio_api_t.
+     *
+     * This allows performing the TCP accept + TLS handshake on a regular fd,
+     * then "upgrading" the socket to the Ultra API data path afterwards.
+     *
+     * NOTE: The returned handle shares the same underlying sockinfo_tcp as the
+     * fd.  Do NOT call xlio_socket_destroy() on it; close the original fd to
+     * tear down the connection.
+     *
+     * NOTE: For sockets with UTLS_TX active, xlio_socket_sendv(INLINE) bypasses
+     * sockinfo_tcp_ops_tls::tcp_tx and therefore does NOT add TLS record
+     * headers.  Use write_tls (SSL_write) for TLS-encrypted sends until a
+     * TLS-aware express send path is added to sockinfo_tcp_ops_tls.
+     */
+    XLIO_EXTRA_API_SOCKET_FROM_FD = (1 << 15),
 };
 
 struct __attribute__((packed)) xlio_api_t {
@@ -153,6 +171,19 @@ struct __attribute__((packed)) xlio_api_t {
      */
     int  (*xlio_recv_zc_fd)(int fd, struct xlio_zc_seg *segs, int max_segs);
     void (*xlio_recv_zc_release)(struct xlio_buf *buf);
+
+    /*
+     * Obtain an xlio_socket_t handle for an existing file-descriptor-based
+     * TCP connection (cap: XLIO_EXTRA_API_SOCKET_FROM_FD).
+     *
+     * Returns a non-zero xlio_socket_t on success, or 0 if the fd is not an
+     * XLIO-managed TCP socket (errno = ENOTSUP).
+     *
+     * The fd remains valid and the connection is not disrupted.  The returned
+     * handle can be used with xlio_socket_sendv / xlio_socket_flush.
+     * It must NOT be passed to xlio_socket_destroy().
+     */
+    xlio_socket_t (*xlio_socket_from_fd)(int fd);
 };
 
 /*

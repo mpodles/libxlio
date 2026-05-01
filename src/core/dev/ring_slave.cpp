@@ -13,6 +13,7 @@
 #include "sock/fd_collection.h"
 #include "sock/sockinfo_tcp.h"
 #include "proto/tls.h"
+#include "util/xlio_pcap.h"
 
 #undef MODULE_NAME
 #define MODULE_NAME "ring_slave"
@@ -579,6 +580,8 @@ bool ring_slave::rx_process_buffer(mem_buf_desc_t *p_rx_wc_buf_desc, void *pv_fd
         }
         return false;
     }
+
+    XLIO_PCAP_DUMP_FRAME(p_rx_wc_buf_desc->p_buffer, sz_data);
 
     inc_cq_moderation_stats();
 

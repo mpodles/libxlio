@@ -18,6 +18,7 @@ extern "C" {
 
 EXPORT_SYMBOL int  xlio_recv_zc_fd(int fd, struct xlio_zc_seg *segs, int max_segs);
 EXPORT_SYMBOL void xlio_recv_zc_release(struct xlio_buf *buf);
+EXPORT_SYMBOL xlio_socket_t xlio_socket_from_fd(int fd);
 
 #ifdef __cplusplus
 }

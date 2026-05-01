@@ -8,6 +8,7 @@
 #include "config.h"
 #endif
 
+#include <cstdio>
 #include <util/sys_vars.h>
 #include <util/libxlio.h>
 #include <vlogger/vlogger.h>
@@ -116,6 +117,9 @@ struct xlio_api_t *extra_api()
         /* Zero-copy receive for BSD sockets with kTLS/UTLS-RX. */
         SET_EXTRA_API(xlio_recv_zc_fd, xlio_recv_zc_fd, XLIO_EXTRA_API_RECV_ZC);
         SET_EXTRA_API(xlio_recv_zc_release, xlio_recv_zc_release, XLIO_EXTRA_API_RECV_ZC);
+
+        /* Convert existing fd to xlio_socket_t without disrupting the connection. */
+        SET_EXTRA_API(xlio_socket_from_fd, xlio_socket_from_fd, XLIO_EXTRA_API_SOCKET_FROM_FD);
     }
 
     return &xlio_api;
@@ -422,8 +426,39 @@ extern "C" EXPORT_SYMBOL int xlio_recv_zc_fd(int fd, struct xlio_zc_seg *segs, i
 extern "C" EXPORT_SYMBOL void xlio_recv_zc_release(struct xlio_buf *buf)
 {
     if (buf) {
+        mem_buf_desc_t *desc = mem_buf_desc_t::from_xlio_buf(buf);
+        (void)desc;
         xlio_buf_free(buf);
     }
+}
+
+/*
+ * xlio_socket_from_fd — obtain an xlio_socket_t handle for an existing fd.
+ *
+ * This is a lightweight read-only conversion: the fd continues to own the
+ * underlying connection.  The caller must NOT pass the returned handle to
+ * xlio_socket_destroy(); closing the original fd tears down the connection.
+ *
+ * The function does not install the Ultra API rx/lwip callbacks, so
+ * xlio_socket_rx_cb_t will not fire.  The TX path (xlio_socket_sendv) works
+ * for cleartext connections.  For connections with UTLS_TX, xlio_socket_sendv
+ * bypasses sockinfo_tcp_ops_tls::tcp_tx and does NOT add TLS record headers;
+ * use SSL_write for TLS-encrypted sends until a TLS-aware express-send path
+ * is added.
+ */
+extern "C" EXPORT_SYMBOL xlio_socket_t xlio_socket_from_fd(int fd)
+{
+    sockinfo *base = g_p_fd_collection ? g_p_fd_collection->get_sockfd(fd) : nullptr;
+    if (!base) {
+        errno = ENOTSUP;
+        return 0;
+    }
+    sockinfo_tcp *si = dynamic_cast<sockinfo_tcp *>(base);
+    if (!si) {
+        errno = ENOTSUP;
+        return 0;
+    }
+    return reinterpret_cast<xlio_socket_t>(si);
 }
 
 extern "C" void xlio_socket_buf_free(xlio_socket_t sock, struct xlio_buf *buf)
@@ -515,11 +550,115 @@ extern "C" int xlio_socket_send(xlio_socket_t sock, const void *data, size_t len
     return xlio_socket_sendv(sock, &iov, 1, attr);
 }
 
+/*
+ * [TEST-ZC] ZcRxOwner — thin mem_desc wrapper around an XLIO RX buffer.
+ *
+ * Passed as zc_owner to sockinfo_tcp_ops_tls::tx() so that tls_record uses
+ * the zero-copy append_data path (pointer store, no memcpy) and fill_iov
+ * produces a 3-element scatter-gather: [TLS header | RX DMA payload | trailer].
+ * The NIC reads directly from the RX DMA address and encrypts in hardware.
+ *
+ * Lifecycle:
+ *   ref_ starts at 1 (caller holds).
+ *   tls_record constructor calls get() → ref_=2.
+ *   Caller calls put() after si->tx() → ref_=1 (tls_record owns).
+ *   TCP ACK → ~tls_record() calls put() → ref_=0 → xlio_buf_free + delete.
+ *
+ * Remove before merging.
+ */
+#ifdef DEFINED_UTLS
+class ZcRxOwner final : public mem_desc {
+public:
+    explicit ZcRxOwner(struct xlio_buf *buf) : buf_(buf), ref_(1) {}
+
+    void get() override { ref_.fetch_add(1, std::memory_order_relaxed); }
+
+    void put() override
+    {
+        if (ref_.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+            /* [TEST-ZC] TCP ACK confirmed — all NIC DMA reads complete.
+             * In production this is where we call the completion callback
+             * (e.g. downstream->resume_read() or xlio_socket_comp_cb_t). */
+            fprintf(stderr,
+                    "[TEST-ZC] ZcRxOwner::put ref=0 buf=%p → xlio_buf_free sz=%zu "
+                    "(TCP ACK confirmed, buffer safe to reuse)\n",
+                    static_cast<void *>(buf_), xlio_socket_buf_get_size(buf_));
+            xlio_buf_free(buf_);
+            delete this;
+        }
+    }
+
+    uint32_t get_lkey(mem_buf_desc_t *, ib_ctx_handler *, const void *,
+                      size_t) override
+    {
+        return xlio_socket_buf_get_mkey(buf_);
+    }
+
+private:
+    struct xlio_buf *buf_;
+    std::atomic<int> ref_;
+};
+#endif /* DEFINED_UTLS */
+
 extern "C" int xlio_socket_sendv(xlio_socket_t sock, const struct iovec *iov, unsigned iovcnt,
                                  const struct xlio_socket_send_attr *attr)
 {
     sockinfo_tcp *si = reinterpret_cast<sockinfo_tcp *>(sock);
 
+#ifdef DEFINED_UTLS
+    /*
+     * TLS-aware express send.
+     *
+     * tcp_tx_express{_inline} bypass m_ops->tx(), so for a UTLS_TX socket
+     * they produce raw TCP payload with no TLS record framing.  Redirect
+     * through si->tx() → sockinfo_tcp_ops_tls::tx() instead.
+     *
+     * Level 1 (inline, attr->userdata_op == 0):
+     *   rec->append_data() copies plaintext into the TLS record buffer.
+     *   NIC encrypts during DMA TX.
+     *
+     * Level 2 ([TEST-ZC], attr->userdata_op != 0):
+     *   attr->userdata_op carries the xlio_buf* from xlio_recv_zc_fd().
+     *   A ZcRxOwner is created and passed as zc_owner to tls_record.
+     *   rec->append_data() stores the pointer (no copy).
+     *   fill_iov() produces [TLS header | RX DMA ptr | trailer].
+     *   NIC reads from the original RX DMA buffer and encrypts in hardware.
+     *   Caller must NOT call xlio_recv_zc_release() for this buf;
+     *   ZcRxOwner::put() releases it on TCP ACK.
+     */
+    if (dynamic_cast<sockinfo_tcp_ops_tls *>(si->get_ops())) {
+        static std::atomic<bool> s_first{true};
+        if (s_first.exchange(false, std::memory_order_relaxed)) {
+            fprintf(stderr,
+                    "[xlio-ultra] xlio_socket_sendv: UTLS_TX active → routing through "
+                    "TLS ops\n");
+        }
+        xlio_tx_call_attr_t tx_arg;
+        tx_arg.opcode      = TX_WRITE;
+        tx_arg.attr.iov    = const_cast<struct iovec *>(iov);
+        tx_arg.attr.sz_iov = static_cast<ssize_t>(iovcnt);
+        tx_arg.attr.flags  = (attr->flags & XLIO_SOCKET_SEND_FLAG_FLUSH) ? 0 : MSG_MORE;
+
+        /* [TEST-ZC] Level-2 zero-copy: userdata_op carries the xlio_buf *. */
+        ZcRxOwner *zc = nullptr;
+        if (attr->userdata_op != 0) {
+            struct xlio_buf *rxbuf =
+                reinterpret_cast<struct xlio_buf *>(attr->userdata_op);
+            zc = new (std::nothrow) ZcRxOwner(rxbuf);
+            if (zc) {
+                tx_arg.attr.flags |= MSG_ZEROCOPY;
+                tx_arg.priv.mdesc  = reinterpret_cast<void *>(zc);
+            }
+        }
+
+        ssize_t rc = si->tx(tx_arg);
+        /* Release caller's initial ref; tls_record holds its own via get(). */
+        if (zc) zc->put();
+        return static_cast<int>(rc);
+    }
+#endif /* DEFINED_UTLS */
+
+    /* Cleartext / non-TLS path — original express logic. */
     unsigned flags = XLIO_EXPRESS_OP_TYPE_DESC;
     flags |= !(attr->flags & XLIO_SOCKET_SEND_FLAG_FLUSH) * XLIO_EXPRESS_MSG_MORE;
 

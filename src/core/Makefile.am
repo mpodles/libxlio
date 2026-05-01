@@ -42,7 +42,8 @@ uninstall-hook:
 lib_LTLIBRARIES = libxlio.la
 
 AM_CPPFLAGS := \
-	-I$(top_srcdir)/src -I$(top_builddir)/src/core/config/descriptor_providers ${LIBNL_CFLAGS} ${LIBJSON_CFLAGS}
+	-I$(top_srcdir)/src -I$(top_builddir)/src/core/config/descriptor_providers ${LIBNL_CFLAGS} ${LIBJSON_CFLAGS} \
+	-DXLIO_PCAP_DUMP
 
 # Files generated during configure should be cleaned during distclean
 DISTCLEANFILES = config/descriptor_providers/xlio_config_schema.h
@@ -167,6 +168,7 @@ libxlio_la_SOURCES := \
 	util/wakeup_pipe.cpp \
 	util/match.cpp \
 	util/utils.cpp \
+	util/xlio_pcap.cpp \
 	util/instrumentation.cpp \
 	util/sys_vars.cpp \
 	util/sys_vars_configurator.cpp \
@@ -347,6 +349,7 @@ libxlio_la_SOURCES := \
 	util/sys_vars_types.h \
 	util/to_str.h \
 	util/utils.h \
+	util/xlio_pcap.h \
 	util/valgrind.h \
 	util/xlio_list.h \
 	util/xlio_stats.h \

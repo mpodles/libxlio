@@ -7,6 +7,7 @@
 #include "dst_entry_tcp.h"
 #include "mapping.h"
 #include "mem_desc.h"
+#include "util/xlio_pcap.h"
 #include <netinet/tcp.h>
 
 #define MODULE_NAME "dst_tcp"
@@ -210,6 +211,11 @@ ssize_t dst_entry_tcp::fast_send(const iovec *p_iov, const ssize_t sz_iov, xlio_
             }
         }
 
+        /* TX pcap: for non-zerocopy the full L2 frame is contiguous at p_pkt+hdr_alignment_diff */
+        if (!is_zerocopy) {
+            XLIO_PCAP_DUMP_FRAME((uint8_t *)p_pkt + hdr_alignment_diff, total_packet_len);
+        }
+
         ret = m_p_ring->send_lwip_buffer(m_id, p_send_wqe, attr.flags, attr.tis);
     } else { // We don'nt support inline in this case, since we believe that this a very rare case
         mem_buf_desc_t *p_mem_buf_desc;
@@ -251,6 +257,9 @@ ssize_t dst_entry_tcp::fast_send(const iovec *p_iov, const ssize_t sz_iov, xlio_
 
         p_mem_buf_desc->tx.p_ip_h = p_ip_hdr;
         p_mem_buf_desc->tx.p_tcp_h = static_cast<tcphdr *>(p_tcp_hdr);
+
+        /* TX pcap slow path: full frame is contiguous in p_mem_buf_desc->p_buffer */
+        XLIO_PCAP_DUMP_FRAME((uint8_t *)p_pkt + hdr_alignment_diff, m_sge[0].length);
 
         p_send_wqe = &m_not_inline_send_wqe;
         p_send_wqe->wr_id = (uintptr_t)p_mem_buf_desc;
