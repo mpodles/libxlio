@@ -1267,7 +1267,8 @@ err_t sockinfo_tcp_ops_tls::recv(struct pbuf *p)
         m_rx_offset = 0;
     }
 
-    m_rx_rec_rcvd += p->tot_len;
+    size_t new_bytes = p->tot_len;
+    m_rx_rec_rcvd += new_bytes;
     while (p) {
         mem_buf_desc_t *pdesc = reinterpret_cast<mem_buf_desc_t *>(p);
         struct pbuf *ptmp = p->next;
@@ -1281,6 +1282,11 @@ err_t sockinfo_tcp_ops_tls::recv(struct pbuf *p)
         m_rx_bufs.push_back(pdesc);
         p = ptmp;
     }
+    fprintf(stderr,
+            "[ulp-tls][recv] fd=%d new_tcp_bytes=%zu total_rx_rcvd=%zu"
+            " m_rx_bufs_approx=%zu resync=%d\n",
+            m_p_sock->get_fd(), new_bytes, (size_t)m_rx_rec_rcvd,
+            (size_t)m_rx_bufs.size(), (int)resync_requested);
 
     if (unlikely(resync_requested && !m_rx_psv_buf) &&
         m_p_tx_ring->credits_get(SQ_CREDITS_TLS_RX_GET_PSV)) {
@@ -1447,6 +1453,12 @@ check_single_record:
 
     /* Handle decryption failures. */
     if (unlikely(ret != 0)) {
+        fprintf(stderr,
+                "[ulp-tls] DECRYPT FAIL fd=%d ret=%d (%s) recno=%lu"
+                " rec_len=%u rx_rcvd=%u → session terminated, data DROPPED\n",
+                m_p_sock->get_fd(), ret,
+                ret == TLS_DECRYPT_BAD_MAC ? "BAD_MAC" : "INTERNAL",
+                (unsigned long)m_next_recno_rx, m_rx_rec_len, m_rx_rec_rcvd);
         terminate_session_fatal(ret == TLS_DECRYPT_BAD_MAC ? TLS_BAD_RECORD_MAC
                                                            : TLS_INTERNAL_ERROR);
         m_refused_data = pres;
@@ -1487,6 +1499,20 @@ check_single_record:
     tcp_recved(m_p_sock->get_pcb(), m_tls_rec_overhead, true);
     if (likely(pres)) {
         assert(pres->tot_len == (m_rx_rec_len - m_tls_rec_overhead));
+        /* Count ptmps in the chain and show each len for split-record diagnosis. */
+        {
+            int nptmp = 0;
+            for (struct pbuf *pp = pres; pp; pp = pp->next) ++nptmp;
+            fprintf(stderr,
+                    "[ulp-tls][record] fd=%d recno=%lu plaintext=%u rec_len=%u"
+                    " overhead=%u nptmp=%d",
+                    m_p_sock->get_fd(), (unsigned long)(m_next_recno_rx - 1),
+                    pres->tot_len, m_rx_rec_len, m_tls_rec_overhead, nptmp);
+            for (struct pbuf *pp = pres; pp; pp = pp->next) {
+                fprintf(stderr, " ptmp_len=%u", pp->len);
+            }
+            fprintf(stderr, " → m_rx_pkt_ready_list\n");
+        }
         err = sockinfo_tcp::rx_lwip_cb((void *)m_p_sock, m_p_sock->get_pcb(), pres, ERR_OK);
         if (err != ERR_OK) {
             /* Underlying buffers are held by 'pres', we can free them below. */
@@ -1563,9 +1589,18 @@ void sockinfo_tcp_ops_tls::rx_comp_callback(void *arg)
         uint32_t resync_seqno = be32toh(params->hw_resync_tcp_sn);
         int tracker = params->state >> 6U;
         int auth = (params->state >> 4U) & 0x3U;
+        fprintf(stderr,
+                "[ulp-tls] RESYNC PSV fd=%d resync_tcp_seq=%u tracker=%d auth=%d"
+                " next_recno=%lu rx_rcvd=%u\n",
+                utls->m_p_sock->get_fd(), resync_seqno, tracker, auth,
+                (unsigned long)utls->m_next_recno_rx, utls->m_rx_rec_rcvd);
         if (tracker == TLS_TRACKER_TRACKING && auth == TLS_AUTH_NO_OFFLOAD) {
             if (utls->m_p_tx_ring->credits_get(SQ_CREDITS_TLS_RX_RESYNC)) {
                 uint64_t recno_be64 = htobe64(utls->find_recno(resync_seqno));
+                fprintf(stderr,
+                        "[ulp-tls] RESYNC reprogram fd=%d resync_seq=%u → recno=%lu\n",
+                        utls->m_p_sock->get_fd(), resync_seqno,
+                        (unsigned long)be64toh(recno_be64));
                 memcpy(utls->m_tls_info_rx.rec_seq, &recno_be64, TLS_AES_GCM_REC_SEQ_LEN);
                 utls->m_p_tx_ring->tls_resync_rx(utls->m_p_tir, &utls->m_tls_info_rx, resync_seqno);
             } else {

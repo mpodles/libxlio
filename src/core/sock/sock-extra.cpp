@@ -600,6 +600,25 @@ private:
 };
 #endif /* DEFINED_UTLS */
 
+/*
+ * xlio_buf_addref — increment the lwip pbuf reference count on an RX DMA
+ * buffer obtained from xlio_recv_zc_fd().
+ *
+ * Call once for each additional zero-copy TX send that will reference this
+ * buffer beyond the first (the first send consumes the ref given by
+ * xlio_recv_zc_fd()).  Each ref is released by xlio_buf_free() when the
+ * corresponding TCP ACK fires in ZcRxOwner::put().
+ *
+ * This is an EXPORT_SYMBOL so that nghttp2 (running against the shared
+ * library) can resolve it via dlsym(RTLD_DEFAULT, "xlio_buf_addref").
+ */
+extern "C" __attribute__((visibility("default")))
+void xlio_buf_addref(struct xlio_buf *buf)
+{
+    if (!buf) return;
+    reinterpret_cast<mem_buf_desc_t *>(buf)->lwip_pbuf_inc_ref_count();
+}
+
 extern "C" int xlio_socket_sendv(xlio_socket_t sock, const struct iovec *iov, unsigned iovcnt,
                                  const struct xlio_socket_send_attr *attr)
 {
