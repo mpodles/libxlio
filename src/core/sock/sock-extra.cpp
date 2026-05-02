@@ -579,10 +579,10 @@ public:
             /* [TEST-ZC] TCP ACK confirmed — all NIC DMA reads complete.
              * In production this is where we call the completion callback
              * (e.g. downstream->resume_read() or xlio_socket_comp_cb_t). */
-            fprintf(stderr,
-                    "[TEST-ZC] ZcRxOwner::put ref=0 buf=%p → xlio_buf_free sz=%zu "
-                    "(TCP ACK confirmed, buffer safe to reuse)\n",
-                    static_cast<void *>(buf_), xlio_socket_buf_get_size(buf_));
+            // fprintf(stderr,
+            //         "[TEST-ZC] ZcRxOwner::put ref=0 buf=%p → xlio_buf_free sz=%zu "
+            //         "(TCP ACK confirmed, buffer safe to reuse)\n",
+            //         static_cast<void *>(buf_), xlio_socket_buf_get_size(buf_));
             xlio_buf_free(buf_);
             delete this;
         }
@@ -647,11 +647,11 @@ extern "C" int xlio_socket_sendv(xlio_socket_t sock, const struct iovec *iov, un
      */
     if (dynamic_cast<sockinfo_tcp_ops_tls *>(si->get_ops())) {
         static std::atomic<bool> s_first{true};
-        if (s_first.exchange(false, std::memory_order_relaxed)) {
-            fprintf(stderr,
-                    "[xlio-ultra] xlio_socket_sendv: UTLS_TX active → routing through "
-                    "TLS ops\n");
-        }
+        // if (s_first.exchange(false, std::memory_order_relaxed)) {
+        //     fprintf(stderr,
+        //             "[xlio-ultra] xlio_socket_sendv: UTLS_TX active → routing through "
+        //             "TLS ops\n");
+        // }
         xlio_tx_call_attr_t tx_arg;
         tx_arg.opcode      = TX_WRITE;
         tx_arg.attr.iov    = const_cast<struct iovec *>(iov);

@@ -232,15 +232,15 @@ void rfs_uc_tcp_gro::flush_gro_desc(void *pv_fd_ready_array)
     /* [nic-rx][gro] merged segment delivered to lwIP.
      * For bufs>1: flush_gro_desc has just set tot_len = merged TCP payload.
      * For bufs==1: tot_len is stale; use rx.sz_payload from the single buffer. */
-    {
-        uint32_t payload_bytes = (m_gro_desc.buf_count > 1)
-            ? m_gro_desc.p_first->lwip_pbuf.tot_len
-            : m_gro_desc.p_first->rx.sz_payload;
-        fprintf(stderr,
-                "[nic-rx][gro] src_port=%u dst_port=%u seq=%u payload=%u bufs=%u\n",
-                ntohs(m_gro_desc.p_tcp_h->source), ntohs(m_gro_desc.p_tcp_h->dest),
-                ntohl(m_gro_desc.p_tcp_h->seq), payload_bytes, m_gro_desc.buf_count);
-    }
+    // {
+    //     uint32_t payload_bytes = (m_gro_desc.buf_count > 1)
+    //         ? m_gro_desc.p_first->lwip_pbuf.tot_len
+    //         : m_gro_desc.p_first->rx.sz_payload;
+    //     fprintf(stderr,
+    //             "[nic-rx][gro] src_port=%u dst_port=%u seq=%u payload=%u bufs=%u\n",
+    //             ntohs(m_gro_desc.p_tcp_h->source), ntohs(m_gro_desc.p_tcp_h->dest),
+    //             ntohl(m_gro_desc.p_tcp_h->seq), payload_bytes, m_gro_desc.buf_count);
+    // }
 
     cq_stats_t &cq_stats = *m_p_ring_simple->m_p_cq_mgr_rx->m_p_cq_stat;
     cq_stats.n_rx_gro_packets++;

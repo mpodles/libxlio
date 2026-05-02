@@ -2578,35 +2578,35 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
     /* Diagnostic: dump every item in the ready list at entry.
      * This lets us see exactly what's in the list on the EAGAIN call,
      * revealing whether r8p2/r10p2 are truly absent or have len=0/bad tls_type. */
-    {
-        int idx = 0;
-        for (mem_buf_desc_t *d = m_rx_pkt_ready_list.front(); d;
-             d = m_rx_pkt_ready_list.next(d)) {
-            fprintf(stderr,
-                    "[zc-trace][xlio] pkt_list_entry[%d] fd=%d lwip_len=%u"
-                    " tot_len=%u tls_type=%d payload=%p\n",
-                    idx, m_fd,
-                    d->lwip_pbuf.len, d->lwip_pbuf.tot_len,
-                    (int)d->rx.tls_type,
-                    (void *)d->lwip_pbuf.payload);
-            ++idx;
-            if (idx >= 32) {
-                fprintf(stderr, "[zc-trace][xlio] pkt_list_entry[...] fd=%d truncated\n", m_fd);
-                break;
-            }
-        }
-        if (idx == 0) {
-            fprintf(stderr,
-                    "[zc-trace][xlio] pkt_list_entry: fd=%d list EMPTY"
-                    " m_rcvbuff_current=%d\n",
-                    m_fd, m_rcvbuff_current);
-        } else {
-            fprintf(stderr,
-                    "[zc-trace][xlio] pkt_list_entry: fd=%d total_items=%d"
-                    " m_rcvbuff_current=%d m_rcvbuff_non_tcp_recved=%d\n",
-                    m_fd, idx, m_rcvbuff_current, m_rcvbuff_non_tcp_recved);
-        }
-    }
+    // {
+    //     int idx = 0;
+    //     for (mem_buf_desc_t *d = m_rx_pkt_ready_list.front(); d;
+    //          d = m_rx_pkt_ready_list.next(d)) {
+    //         fprintf(stderr,
+    //                 "[zc-trace][xlio] pkt_list_entry[%d] fd=%d lwip_len=%u"
+    //                 " tot_len=%u tls_type=%d payload=%p\n",
+    //                 idx, m_fd,
+    //                 d->lwip_pbuf.len, d->lwip_pbuf.tot_len,
+    //                 (int)d->rx.tls_type,
+    //                 (void *)d->lwip_pbuf.payload);
+    //         ++idx;
+    //         if (idx >= 32) {
+    //             fprintf(stderr, "[zc-trace][xlio] pkt_list_entry[...] fd=%d truncated\n", m_fd);
+    //             break;
+    //         }
+    //     }
+    //     if (idx == 0) {
+    //         fprintf(stderr,
+    //                 "[zc-trace][xlio] pkt_list_entry: fd=%d list EMPTY"
+    //                 " m_rcvbuff_current=%d\n",
+    //                 m_fd, m_rcvbuff_current);
+    //     } else {
+    //         fprintf(stderr,
+    //                 "[zc-trace][xlio] pkt_list_entry: fd=%d total_items=%d"
+    //                 " m_rcvbuff_current=%d m_rcvbuff_non_tcp_recved=%d\n",
+    //                 m_fd, idx, m_rcvbuff_current, m_rcvbuff_non_tcp_recved);
+    //     }
+    // }
 
     if (m_rx_pkt_ready_list.empty()) {
         errno = EAGAIN;
@@ -2714,11 +2714,11 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
         segs[n].buf      = desc->to_xlio_buf();
         segs[n].tls_type = desc->rx.tls_type;
 
-        fprintf(stderr,
-                "[zc-trace][xlio] seg[%d] fd=%d payload=%p len=%zu type=%d\n",
-                n, m_fd,
-                (void *)desc->lwip_pbuf.payload, len,
-                (int)desc->rx.tls_type);
+        // fprintf(stderr,
+        //         "[zc-trace][xlio] seg[%d] fd=%d payload=%p len=%zu type=%d\n",
+        //         n, m_fd,
+        //         (void *)desc->lwip_pbuf.payload, len,
+        //         (int)desc->rx.tls_type);
 
         total_bytes += len;
         ++n;
@@ -2745,10 +2745,10 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
 
             size_t clen = chain_pb->len;
             if (clen == 0) {
-                fprintf(stderr,
-                        "[zc-trace][xlio] recv_zc: chain member len=0"
-                        " fd=%d n=%d tls_type=%d (skipped)\n",
-                        m_fd, n, (int)cd->rx.tls_type);
+                // fprintf(stderr,
+                //         "[zc-trace][xlio] recv_zc: chain member len=0"
+                //         " fd=%d n=%d tls_type=%d (skipped)\n",
+                //         m_fd, n, (int)cd->rx.tls_type);
                 continue;
             }
 
@@ -2759,9 +2759,9 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
             segs[n].buf      = cd->to_xlio_buf();
             segs[n].tls_type = cd->rx.tls_type;
 
-            fprintf(stderr,
-                    "[zc-trace][xlio] seg[%d] fd=%d payload=%p len=%zu type=%d (chain)\n",
-                    n, m_fd, (void *)chain_pb->payload, clen, (int)cd->rx.tls_type);
+            // fprintf(stderr,
+            //         "[zc-trace][xlio] seg[%d] fd=%d payload=%p len=%zu type=%d (chain)\n",
+            //         n, m_fd, (void *)chain_pb->payload, clen, (int)cd->rx.tls_type);
 
             total_bytes += clen;
             ++n;
@@ -2810,9 +2810,9 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
         }
     }
 
-    fprintf(stderr,
-            "[zc-trace][xlio] recv_zc fd=%d n=%d total=%zu rcvbuff=%d\n",
-            m_fd, n, total_bytes, m_rcvbuff_current);
+    // fprintf(stderr,
+    //         "[zc-trace][xlio] recv_zc fd=%d n=%d total=%zu rcvbuff=%d\n",
+    //         m_fd, n, total_bytes, m_rcvbuff_current);
 
     return n;
 #endif /* DEFINED_UTLS */
