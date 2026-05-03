@@ -4,6 +4,7 @@
  * SPDX-License-Identifier: GPL-2.0-only or BSD-2-Clause
  */
 
+#include <atomic>
 #include <functional>
 #include <numeric>
 #include <stdio.h>
@@ -29,6 +30,7 @@
 #include "sock-redirect.h"
 #include "fd_collection.h"
 #include "sockinfo_tcp.h"
+#include "probnik.h"
 #include "sockinfo_tcp_listen_context.h"
 #include "tuning_report_printer.h"
 #include "bind_no_port.h"
@@ -2578,35 +2580,35 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
     /* Diagnostic: dump every item in the ready list at entry.
      * This lets us see exactly what's in the list on the EAGAIN call,
      * revealing whether r8p2/r10p2 are truly absent or have len=0/bad tls_type. */
-    // {
-    //     int idx = 0;
-    //     for (mem_buf_desc_t *d = m_rx_pkt_ready_list.front(); d;
-    //          d = m_rx_pkt_ready_list.next(d)) {
-    //         fprintf(stderr,
-    //                 "[zc-trace][xlio] pkt_list_entry[%d] fd=%d lwip_len=%u"
-    //                 " tot_len=%u tls_type=%d payload=%p\n",
-    //                 idx, m_fd,
-    //                 d->lwip_pbuf.len, d->lwip_pbuf.tot_len,
-    //                 (int)d->rx.tls_type,
-    //                 (void *)d->lwip_pbuf.payload);
-    //         ++idx;
-    //         if (idx >= 32) {
-    //             fprintf(stderr, "[zc-trace][xlio] pkt_list_entry[...] fd=%d truncated\n", m_fd);
-    //             break;
-    //         }
-    //     }
-    //     if (idx == 0) {
-    //         fprintf(stderr,
-    //                 "[zc-trace][xlio] pkt_list_entry: fd=%d list EMPTY"
-    //                 " m_rcvbuff_current=%d\n",
-    //                 m_fd, m_rcvbuff_current);
-    //     } else {
-    //         fprintf(stderr,
-    //                 "[zc-trace][xlio] pkt_list_entry: fd=%d total_items=%d"
-    //                 " m_rcvbuff_current=%d m_rcvbuff_non_tcp_recved=%d\n",
-    //                 m_fd, idx, m_rcvbuff_current, m_rcvbuff_non_tcp_recved);
-    //     }
-    // }
+    {
+        int idx = 0;
+        for (mem_buf_desc_t *d = m_rx_pkt_ready_list.front(); d;
+             d = m_rx_pkt_ready_list.next(d)) {
+            PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                        "pkt_list_entry[%d] fd=%d lwip_len=%u"
+                        " tot_len=%u tls_type=%d payload=%p",
+                        idx, m_fd,
+                        d->lwip_pbuf.len, d->lwip_pbuf.tot_len,
+                        (int)d->rx.tls_type,
+                        (void *)d->lwip_pbuf.payload);
+            ++idx;
+            if (idx >= 32) {
+                PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                            "pkt_list_entry[...] fd=%d truncated", m_fd);
+                break;
+            }
+        }
+        if (idx == 0) {
+            PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                        "pkt_list_entry: fd=%d list EMPTY m_rcvbuff_current=%d",
+                        m_fd, m_rcvbuff_current);
+        } else {
+            PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                        "pkt_list_entry: fd=%d total_items=%d"
+                        " m_rcvbuff_current=%d m_rcvbuff_non_tcp_recved=%d",
+                        m_fd, idx, m_rcvbuff_current, m_rcvbuff_non_tcp_recved);
+        }
+    }
 
     if (m_rx_pkt_ready_list.empty()) {
         errno = EAGAIN;
@@ -2630,9 +2632,9 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
     mem_buf_desc_t *head = m_rx_pkt_ready_list.front();
     if (head->rx.tls_type == 0) {
         /* Not a UTLS_RX socket — buffers contain ciphertext or non-XLIO data. */
-        fprintf(stderr,
-                "[zc-trace][xlio] recv_zc_impl fd=%d: tls_type=0, UTLS_RX not active"
-                " → ENOTSUP (falling back to SSL_read permanently)\n", m_fd);
+        PROBNIK_LOG(PROBNIK_DEBUG, "zc-trace",
+                    "recv_zc_impl fd=%d: tls_type=0, UTLS_RX not active"
+                    " -> ENOTSUP (falling back to SSL_read permanently)", m_fd);
         errno = ENOTSUP;
         return -1;
     }
@@ -2644,6 +2646,106 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
 
     int n = 0;
     size_t total_bytes = 0;
+
+    /*
+     * Helper: emit one ZC segment into segs[n], then advance n and
+     * total_bytes.
+     *
+     * PBUF_ZEROCOPY descriptors are lightweight ULP-created ptmps that
+     * must NEVER be returned to xlio_buf_free/reclaim_recv_buffers because
+     * the STRQ ring rejects them (incompatible p_desc_owner / desc.attr).
+     * For those we hand out the underlying DMA buffer (pi) instead — it IS
+     * a proper RX ring buffer that xlio_buf_free can reclaim correctly.
+     *
+     * OWNERSHIP TRANSFER — do NOT touch pi->lwip_pbuf.ref here.
+     *
+     * The ULP already called ++pi->ref when it created this ptmp.  That
+     * increment IS the ZcBodyRef's reference: it keeps pi alive until
+     * xlio_buf_free() is called from ZcRxOwner::put() on TCP ACK.
+     *
+     * The previous approach (++pi->ref; reuse_buffer → --pi->ref; net 0)
+     * was fragile: any extra decrement from cleanup paths (m_rx_bufs
+     * teardown on connection close, ring cleanup flushes) could underflow
+     * pi->ref and trigger a double-free (observed as ref=65535 / attr=0
+     * in reclaim_recv_buffer_helper).
+     *
+     * By just freeing the ptmp WRAPPER without touching pi->ref, the
+     * ref-count ledger for pi is:
+     *   R_init (ring alloc = 1)
+     *   +N  ULP ++pi->ref, one per ptmp created pointing to this pi
+     *   -1  ULP pbuf_free(pi) once when pi is popped from m_rx_bufs
+     *   -N  xlio_buf_free once per ZcBodyRef/release_zc (one per ptmp)
+     *   net = 0 → pi reclaimed cleanly on the last release, no extras.
+     *
+     * Plain RX buffers (non-ZEROCOPY) are returned directly with their
+     * own inc_ref_count.
+     */
+    /* One-shot flag so we print the "fix is active" marker only once per process. */
+    static std::atomic<bool> s_emit_seg_fix_announced {false};
+    if (!s_emit_seg_fix_announced.exchange(true)) {
+        PROBNIK_LOG(PROBNIK_INFO, "zc-trace",
+                    "emit_seg TRANSFER fix IS ACTIVE (first call fd=%d)", m_fd);
+    }
+
+    auto emit_seg = [&](mem_buf_desc_t *d, uint8_t *payload, size_t slen) {
+        if (d->lwip_pbuf.type == PBUF_ZEROCOPY) {
+            mem_buf_desc_t *pi =
+                reinterpret_cast<mem_buf_desc_t *>(d->lwip_pbuf.desc.mdesc);
+
+            if (unlikely(pi == nullptr)) {
+                PROBNIK_LOG(PROBNIK_ERROR, "zc-trace",
+                            "emit_seg BUG: PBUF_ZEROCOPY ptmp=%p has mdesc=NULL "
+                            "(already freed?). Skipping seg n=%d fd=%d",
+                            (void *)d, n, m_fd);
+                /* Skip this seg rather than crash on pi->... */
+                return;
+            }
+
+            PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                        "emit_seg[%d]: TRANSFER ptmp=%p type=%d attr=%d → "
+                        "pi=%p pi_type=%d pi_attr=%d pi_ref=%d pi_owner=%p "
+                        "slen=%zu fd=%d",
+                        n, (void *)d,
+                        (int)d->lwip_pbuf.type, (int)d->lwip_pbuf.desc.attr,
+                        (void *)pi,
+                        (int)pi->lwip_pbuf.type, (int)pi->lwip_pbuf.desc.attr,
+                        (int)pi->lwip_pbuf.ref, (void *)pi->p_desc_owner,
+                        slen, m_fd);
+
+            /* Free the ptmp wrapper — the ULP's ref on pi is kept alive. */
+            d->lwip_pbuf.desc.mdesc = nullptr;
+            {
+                dst_entry_tcp *p_dst =
+                    static_cast<dst_entry_tcp *>(m_p_connected_dst_entry);
+                if (likely(p_dst)) {
+                    p_dst->put_zc_buffer(d);
+                } else {
+                    g_buffer_pool_zc->put_buffers_thread_safe(d);
+                }
+            }
+
+            segs[n].data     = payload;
+            segs[n].len      = slen;
+            segs[n].buf      = pi->to_xlio_buf();
+            segs[n].tls_type = d->rx.tls_type;
+        } else {
+            PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                        "emit_seg[%d]: DIRECT desc=%p type=%d attr=%d ref=%d owner=%p "
+                        "slen=%zu fd=%d",
+                        n, (void *)d,
+                        (int)d->lwip_pbuf.type, (int)d->lwip_pbuf.desc.attr,
+                        (int)d->lwip_pbuf.ref, (void *)d->p_desc_owner,
+                        slen, m_fd);
+
+            d->lwip_pbuf_inc_ref_count();
+            segs[n].data     = payload;
+            segs[n].len      = slen;
+            segs[n].buf      = d->to_xlio_buf();
+            segs[n].tls_type = d->rx.tls_type;
+        }
+        total_bytes += slen;
+        ++n;
+    };
 
     while (n < max_segs && !m_rx_pkt_ready_list.empty()) {
         mem_buf_desc_t *desc = m_rx_pkt_ready_list.front();
@@ -2674,25 +2776,16 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
 
         if (len == 0) {
             /* Shouldn't happen, but skip empty buffers defensively. */
-            fprintf(stderr,
-                    "[zc-trace][xlio] recv_zc: SKIPPED len=0 entry"
-                    " fd=%d n=%d tls_type=%d payload=%p (freed)\n",
-                    m_fd, n, (int)desc->rx.tls_type,
-                    (void *)desc->lwip_pbuf.payload);
+            PROBNIK_LOG(PROBNIK_DEBUG, "zc-trace",
+                        "recv_zc: SKIPPED len=0 entry"
+                        " fd=%d n=%d tls_type=%d payload=%p (freed)",
+                        m_fd, n, (int)desc->rx.tls_type,
+                        (void *)desc->lwip_pbuf.payload);
             m_rx_pkt_ready_list.pop_front();
             --m_n_rx_pkt_ready_list_count;
             reuse_buffer(desc);
             continue;
         }
-
-        /*
-         * Bump lwip ref-count so the buffer survives after we remove it
-         * from m_rx_pkt_ready_list.  The caller releases it via
-         * xlio_recv_zc_release() → xlio_buf_free() → reclaim_recv_buffers(),
-         * which decrements the ref-count and returns the buffer to the pool
-         * when it reaches zero.
-         */
-        desc->lwip_pbuf_inc_ref_count();
 
         m_rx_pkt_ready_list.pop_front();
         --m_n_rx_pkt_ready_list_count;
@@ -2709,34 +2802,33 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
          */
         m_rx_pkt_ready_offset = 0;
 
-        segs[n].data     = static_cast<uint8_t *>(desc->lwip_pbuf.payload) + offset;
-        segs[n].len      = len;
-        segs[n].buf      = desc->to_xlio_buf();
-        segs[n].tls_type = desc->rx.tls_type;
+        /*
+         * Save the chain head BEFORE emit_seg: for PBUF_ZEROCOPY descriptors
+         * emit_seg calls reuse_buffer(desc) which may free desc immediately,
+         * making desc->lwip_pbuf.next a dangling pointer.
+         */
+        struct pbuf *chain_head = desc->lwip_pbuf.next;
 
-        // fprintf(stderr,
-        //         "[zc-trace][xlio] seg[%d] fd=%d payload=%p len=%zu type=%d\n",
-        //         n, m_fd,
-        //         (void *)desc->lwip_pbuf.payload, len,
-        //         (int)desc->rx.tls_type);
-
-        total_bytes += len;
-        ++n;
+        emit_seg(desc, static_cast<uint8_t *>(desc->lwip_pbuf.payload) + offset, len);
 
         /*
          * Follow pbuf chain: rx_lwip_cb (ULP path) pushes only the head pbuf
          * to m_rx_pkt_ready_list while keeping the tail pbufs linked via
          * lwip_pbuf.next.  rx_lwip_cb_entity_context breaks the chain before
-         * pushing so desc->lwip_pbuf.next is always nullptr in that path.
+         * pushing so chain_head is always nullptr in that path.
          *
          * We iterate the tail here and emit each as an additional segment so
          * recv_zc callers receive the complete TLS record, not just the first
          * DMA buffer worth of bytes.
+         *
+         * For the same PBUF_ZEROCOPY reason we save next_pb before calling
+         * emit_seg on each chain member.
          */
-        for (struct pbuf *chain_pb = desc->lwip_pbuf.next;
-             chain_pb && n < max_segs;
-             chain_pb = chain_pb->next) {
+        for (struct pbuf *chain_pb = chain_head; chain_pb && n < max_segs; ) {
             mem_buf_desc_t *cd = reinterpret_cast<mem_buf_desc_t *>(chain_pb);
+
+            /* Save next before emit_seg may free cd. */
+            struct pbuf *next_pb = chain_pb->next;
 
             if (cd->rx.tls_type != 0 &&
                 cd->rx.tls_type != XLIO_TLS_RT_APPLICATION_DATA) {
@@ -2745,26 +2837,13 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
 
             size_t clen = chain_pb->len;
             if (clen == 0) {
-                // fprintf(stderr,
-                //         "[zc-trace][xlio] recv_zc: chain member len=0"
-                //         " fd=%d n=%d tls_type=%d (skipped)\n",
-                //         m_fd, n, (int)cd->rx.tls_type);
+                chain_pb = next_pb;
                 continue;
             }
 
-            cd->lwip_pbuf_inc_ref_count();
+            emit_seg(cd, static_cast<uint8_t *>(chain_pb->payload), clen);
 
-            segs[n].data     = static_cast<uint8_t *>(chain_pb->payload);
-            segs[n].len      = clen;
-            segs[n].buf      = cd->to_xlio_buf();
-            segs[n].tls_type = cd->rx.tls_type;
-
-            // fprintf(stderr,
-            //         "[zc-trace][xlio] seg[%d] fd=%d payload=%p len=%zu type=%d (chain)\n",
-            //         n, m_fd, (void *)chain_pb->payload, clen, (int)cd->rx.tls_type);
-
-            total_bytes += clen;
-            ++n;
+            chain_pb = next_pb;
         }
     }
 
@@ -2803,16 +2882,16 @@ int sockinfo_tcp::recv_zc_impl(struct xlio_zc_seg *segs, int max_segs)
             int extra = std::min(m_rcvbuff_non_tcp_recved, space);
             tcp_recved(&m_pcb, static_cast<uint32_t>(extra), true);
             m_rcvbuff_non_tcp_recved -= extra;
-            fprintf(stderr,
-                    "[zc-trace][xlio] recv_zc window-fix fd=%d extra_ack=%d"
-                    " remaining_non_tcp=%d space=%d\n",
-                    m_fd, extra, m_rcvbuff_non_tcp_recved, space);
+            PROBNIK_LOG(PROBNIK_DEBUG, "zc-trace",
+                        "recv_zc window-fix fd=%d extra_ack=%d"
+                        " remaining_non_tcp=%d space=%d",
+                        m_fd, extra, m_rcvbuff_non_tcp_recved, space);
         }
     }
 
-    // fprintf(stderr,
-    //         "[zc-trace][xlio] recv_zc fd=%d n=%d total=%zu rcvbuff=%d\n",
-    //         m_fd, n, total_bytes, m_rcvbuff_current);
+    PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                "recv_zc fd=%d n=%d total=%zu rcvbuff=%d",
+                m_fd, n, (size_t)total_bytes, m_rcvbuff_current);
 
     return n;
 #endif /* DEFINED_UTLS */

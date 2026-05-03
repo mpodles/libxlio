@@ -8,7 +8,7 @@
 #include <netinet/ip6.h>
 #include <atomic>
 #include "ring_slave.h"
-
+#include <probnik.h>
 /* [nic-rx] cumulative byte counter across all connections (debug only). */
 static std::atomic<uint64_t> g_nic_rx_fast_bytes_total {0};
 #include "proto/ip_frag.h"
@@ -674,23 +674,22 @@ bool ring_slave::rx_process_buffer(mem_buf_desc_t *p_rx_wc_buf_desc, void *pv_fd
                              p_tcp_h->fin ? "F" : "", ntohl(p_tcp_h->seq), ntohl(p_tcp_h->ack_seq),
                              ntohs(p_tcp_h->window), p_rx_wc_buf_desc->rx.sz_payload);
 
-//                 if (p_rx_wc_buf_desc->rx.sz_payload > 0) {
-//                     uint64_t running = g_nic_rx_fast_bytes_total.fetch_add(
-//                         p_rx_wc_buf_desc->rx.sz_payload) + p_rx_wc_buf_desc->rx.sz_payload;
-//                     fprintf(stderr,
-//                             "[nic-rx][fast] src_port=%u dst_port=%u seq=%u sz=%zu cum=%lu"
-// #ifdef DEFINED_UTLS
-//                             " tls_dec=%d"
-// #endif
-//                             "\n",
-//                             ntohs(p_tcp_h->source), ntohs(p_tcp_h->dest),
-//                             ntohl(p_tcp_h->seq), p_rx_wc_buf_desc->rx.sz_payload,
-//                             (unsigned long)running
-// #ifdef DEFINED_UTLS
-//                             , (int)p_rx_wc_buf_desc->rx.tls_decrypted
-// #endif
-//                             );
-//                 }
+                if (p_rx_wc_buf_desc->rx.sz_payload > 0) {
+                    uint64_t running = g_nic_rx_fast_bytes_total.fetch_add(
+                        p_rx_wc_buf_desc->rx.sz_payload) + p_rx_wc_buf_desc->rx.sz_payload;
+                    PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                            "src_port=%u dst_port=%u seq=%u sz=%zu cum=%lu"
+#ifdef DEFINED_UTLS
+                            " tls_dec=%d"
+#endif
+                            ,ntohs(p_tcp_h->source), ntohs(p_tcp_h->dest),
+                            ntohl(p_tcp_h->seq), p_rx_wc_buf_desc->rx.sz_payload,
+                            (unsigned long)running
+#ifdef DEFINED_UTLS
+                            , (int)p_rx_wc_buf_desc->rx.tls_decrypted
+#endif
+                            );
+                }
 
                 return si->get_rfs_ptr()->rx_dispatch_packet(p_rx_wc_buf_desc, pv_fd_ready_array);
             }
@@ -1096,21 +1095,20 @@ bool steering_handler<KEY4T, KEY2T, HDR>::rx_process_buffer_no_flow_id(
                      p_tcp_h->syn ? "S" : "", p_tcp_h->fin ? "F" : "", ntohl(p_tcp_h->seq),
                      ntohl(p_tcp_h->ack_seq), ntohs(p_tcp_h->window), sz_payload);
 
-//         if (sz_payload > 0) {
-//             uint64_t running_slow = g_nic_rx_fast_bytes_total.fetch_add(sz_payload) + sz_payload;
-//             fprintf(stderr,
-//                     "[nic-rx][slow] src_port=%u dst_port=%u seq=%u sz=%zu cum=%lu"
-// #ifdef DEFINED_UTLS
-//                     " tls_dec=%d"
-// #endif
-//                     "\n",
-//                     ntohs(p_tcp_h->source), ntohs(p_tcp_h->dest),
-//                     ntohl(p_tcp_h->seq), sz_payload, (unsigned long)running_slow
-// #ifdef DEFINED_UTLS
-//                     , (int)p_rx_wc_buf_desc->rx.tls_decrypted
-// #endif
-//                     );
-//         }
+        if (sz_payload > 0) {
+            uint64_t running_slow = g_nic_rx_fast_bytes_total.fetch_add(sz_payload) + sz_payload;
+            PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                    "src_port=%u dst_port=%u seq=%u sz=%zu cum=%lu"
+#ifdef DEFINED_UTLS
+                    " tls_dec=%d"
+#endif
+                    , ntohs(p_tcp_h->source), ntohs(p_tcp_h->dest),
+                    ntohl(p_tcp_h->seq), (size_t)sz_payload, (unsigned long)running_slow
+#ifdef DEFINED_UTLS
+                    , (int)p_rx_wc_buf_desc->rx.tls_decrypted
+#endif
+                    );
+        }
 
         // Update packet descriptor with datagram base address and length
         p_rx_wc_buf_desc->rx.frag.iov_base = (uint8_t *)p_tcp_h + sizeof(struct tcphdr);

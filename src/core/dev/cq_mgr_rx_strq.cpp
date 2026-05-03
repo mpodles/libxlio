@@ -474,7 +474,15 @@ void cq_mgr_rx_strq::reclaim_recv_buffer_helper(mem_buf_desc_t *buff)
             while (buff) {
                 if (unlikely(buff->lwip_pbuf.desc.attr != PBUF_DESC_STRIDE)) {
                     __log_info_err("CQ STRQ reclaim_recv_buffer_helper with incompatible "
-                                   "mem_buf_desc_t object");
+                                   "mem_buf_desc_t object "
+                                   "buff=%p type=%d attr=%d ref=%d n_ref=%d owner=%p ring=%p",
+                                   (void *)buff,
+                                   (int)buff->lwip_pbuf.type,
+                                   (int)buff->lwip_pbuf.desc.attr,
+                                   (int)buff->lwip_pbuf.ref,
+                                   (int)buff->get_ref_count(),
+                                   (void *)buff->p_desc_owner,
+                                   (void *)m_p_ring);
                     // We cannot continue iterating over a broken buffer object.
                     break;
                 }

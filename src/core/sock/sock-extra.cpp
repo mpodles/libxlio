@@ -19,7 +19,7 @@
 #include <sock/sockinfo_tcp.h>
 #include <sock/sockinfo_udp.h>
 #include <sock/fd_collection.h>
-
+#include <probnik.h>
 #include "sock/sock-extra.h"
 #include "xlio.h"
 
@@ -371,7 +371,61 @@ int xlio_socket_attach_group(xlio_socket_t sock, xlio_poll_group_t group)
 static void xlio_buf_free(struct xlio_buf *buf)
 {
     mem_buf_desc_t *desc = mem_buf_desc_t::from_xlio_buf(buf);
+
+    /*
+     * BUG DETECTOR: If a PBUF_ZEROCOPY ptmp reaches here it means emit_seg
+     * did NOT convert it to its underlying STRIDE descriptor before returning
+     * the seg to nghttpx.  This will cause a reclaim_recv_buffer_helper error
+     * (incompatible object) or a NULL-deref segfault if p_desc_owner==nullptr.
+     * Log loudly so we can tell whether the emit_seg fix is active, then bail
+     * out safely (accept the buffer leak rather than crash).
+     */
+    if (unlikely(desc->lwip_pbuf.type == PBUF_ZEROCOPY)) {
+        PROBNIK_LOG(PROBNIK_ERROR, "zc-trace",
+                    "xlio_buf_free BUG: PBUF_ZEROCOPY ptmp reached xlio_buf_free! "
+                    "buf=%p desc=%p p_desc_owner=%p attr=%d ref=%d "
+                    "(emit_seg fix NOT active or wrong code path)",
+                    (void *)buf, (void *)desc, (void *)desc->p_desc_owner,
+                    (int)desc->lwip_pbuf.desc.attr, (int)desc->lwip_pbuf.ref);
+        /* Leak the ptmp rather than crash or corrupt the STRQ ring. */
+        return;
+    }
+
     ring_slave *rng = desc->p_desc_owner;
+    if (unlikely(rng == nullptr)) {
+        PROBNIK_LOG(PROBNIK_ERROR, "zc-trace",
+                    "xlio_buf_free BUG: p_desc_owner=NULL for buf=%p desc=%p "
+                    "type=%d attr=%d ref=%d - leaking to avoid segfault",
+                    (void *)buf, (void *)desc,
+                    (int)desc->lwip_pbuf.type, (int)desc->lwip_pbuf.desc.attr,
+                    (int)desc->lwip_pbuf.ref);
+        return;
+    }
+
+    /*
+     * Double-free guard: attr == PBUF_DESC_NONE (0) means free_lwip_pbuf()
+     * already ran on this buffer — it was fully reclaimed and zeroed.  If we
+     * let reclaim_recv_buffer_helper run again it will corrupt ring state and
+     * log "incompatible mem_buf_desc_t" with ref=65535, n_ref=-1.
+     * Log loudly (so we can find the caller that owns the stale reference)
+     * and bail out rather than crash.
+     */
+    if (unlikely(desc->lwip_pbuf.desc.attr == PBUF_DESC_NONE &&
+                 desc->lwip_pbuf.ref == 0)) {
+        PROBNIK_LOG(PROBNIK_ERROR, "zc-trace",
+                    "xlio_buf_free BUG: double-free detected! buf=%p desc=%p "
+                    "type=%d attr=0 ref=0 owner=%p — buffer already reclaimed, "
+                    "leaking to avoid double-reclaim crash",
+                    (void *)buf, (void *)desc,
+                    (int)desc->lwip_pbuf.type, (void *)rng);
+        return;
+    }
+
+    PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                "xlio_buf_free: buf=%p desc=%p type=%d attr=%d ref=%d owner=%p",
+                (void *)buf, (void *)desc,
+                (int)desc->lwip_pbuf.type, (int)desc->lwip_pbuf.desc.attr,
+                (int)desc->lwip_pbuf.ref, (void *)rng);
 
     desc->p_next_desc = nullptr;
     bool ret = rng->reclaim_recv_buffers(desc);
@@ -579,10 +633,10 @@ public:
             /* [TEST-ZC] TCP ACK confirmed — all NIC DMA reads complete.
              * In production this is where we call the completion callback
              * (e.g. downstream->resume_read() or xlio_socket_comp_cb_t). */
-            // fprintf(stderr,
-            //         "[TEST-ZC] ZcRxOwner::put ref=0 buf=%p → xlio_buf_free sz=%zu "
-            //         "(TCP ACK confirmed, buffer safe to reuse)\n",
-            //         static_cast<void *>(buf_), xlio_socket_buf_get_size(buf_));
+            PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                    "[ZcRxOwner::put ref=0 buf=%p -> xlio_buf_free sz=%zu "
+                    "(TCP ACK confirmed, buffer safe to reuse)",
+                    static_cast<void *>(buf_), xlio_socket_buf_get_size(buf_));
             xlio_buf_free(buf_);
             delete this;
         }
@@ -616,7 +670,13 @@ extern "C" __attribute__((visibility("default")))
 void xlio_buf_addref(struct xlio_buf *buf)
 {
     if (!buf) return;
-    reinterpret_cast<mem_buf_desc_t *>(buf)->lwip_pbuf_inc_ref_count();
+    /*
+     * buf = pi->to_xlio_buf() = &pi->rx.timestamps.sw (offset 0x98 inside pi).
+     * We must use from_xlio_buf() to recover pi, NOT a raw reinterpret_cast
+     * which would treat the interior of pi as a mem_buf_desc_t and increment
+     * the wrong field (silently leaving lwip_pbuf.ref unchanged → double-free).
+     */
+    mem_buf_desc_t::from_xlio_buf(buf)->lwip_pbuf_inc_ref_count();
 }
 
 extern "C" int xlio_socket_sendv(xlio_socket_t sock, const struct iovec *iov, unsigned iovcnt,
@@ -647,11 +707,11 @@ extern "C" int xlio_socket_sendv(xlio_socket_t sock, const struct iovec *iov, un
      */
     if (dynamic_cast<sockinfo_tcp_ops_tls *>(si->get_ops())) {
         static std::atomic<bool> s_first{true};
-        // if (s_first.exchange(false, std::memory_order_relaxed)) {
-        //     fprintf(stderr,
-        //             "[xlio-ultra] xlio_socket_sendv: UTLS_TX active → routing through "
-        //             "TLS ops\n");
-        // }
+        if (s_first.exchange(false, std::memory_order_relaxed)) {
+            PROBNIK_LOG(PROBNIK_TRACE, "zc-trace",
+                    "xlio_socket_sendv: UTLS_TX active - routing through"
+                    "TLS ops");
+        }
         xlio_tx_call_attr_t tx_arg;
         tx_arg.opcode      = TX_WRITE;
         tx_arg.attr.iov    = const_cast<struct iovec *>(iov);
