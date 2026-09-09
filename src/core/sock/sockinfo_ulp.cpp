@@ -487,9 +487,16 @@ int sockinfo_tcp_ops_tls::setsockopt(int __level, int __optname, const void *__o
     }
 
     si_ulp_logdbg("TLS %s offload is requested", __optname == TLS_TX ? "TX" : "RX");
+    PROBNIK_LOG(PROBNIK_DEBUG, "zc-trace",
+                "setsockopt(SOL_TLS) fd=%d optname=%s version=0x%x cipher=%u",
+                m_p_sock->get_fd(), __optname == TLS_TX ? "TLS_TX" : "TLS_RX",
+                base_info->version, base_info->cipher_type);
 
     if (unlikely(base_info->version != TLS_1_2_VERSION && base_info->version != TLS_1_3_VERSION)) {
         si_ulp_logdbg("Unsupported TLS version.");
+        PROBNIK_LOG(PROBNIK_WARN, "zc-trace",
+                    "setsockopt(SOL_TLS) fd=%d: unsupported TLS version=0x%x -> ENOPROTOOPT",
+                    m_p_sock->get_fd(), base_info->version);
         errno = ENOPROTOOPT;
         return -1;
     }
@@ -498,6 +505,10 @@ int sockinfo_tcp_ops_tls::setsockopt(int __level, int __optname, const void *__o
         /* TX offload checks. */
         if (unlikely(!m_p_sock->is_utls_supported(UTLS_MODE_TX))) {
             si_ulp_logdbg("TLS_TX is not supported.");
+            PROBNIK_LOG(PROBNIK_WARN, "zc-trace",
+                        "setsockopt(SOL_TLS) fd=%d: is_utls_supported(TX)=false -> ENOPROTOOPT"
+                        " (check XLIO_UTLS_TX and ring tls_tx_supported/HCA caps)",
+                        m_p_sock->get_fd());
             errno = ENOPROTOOPT;
             return -1;
         }
@@ -505,25 +516,45 @@ int sockinfo_tcp_ops_tls::setsockopt(int __level, int __optname, const void *__o
         /* RX offload checks. */
         if (unlikely(!m_p_sock->is_utls_supported(UTLS_MODE_RX))) {
             si_ulp_logdbg("TLS_RX is not supported.");
+            PROBNIK_LOG(PROBNIK_WARN, "zc-trace",
+                        "setsockopt(SOL_TLS) fd=%d: is_utls_supported(RX)=false -> ENOPROTOOPT"
+                        " (check XLIO_UTLS_RX and ring tls_rx_supported/HCA caps)",
+                        m_p_sock->get_fd());
             errno = ENOPROTOOPT;
             return -1;
         }
         if (unlikely(!g_tls_api)) {
             si_ulp_logdbg("OpenSSL symbols aren't found, cannot support TLS RX offload.");
+            PROBNIK_LOG(PROBNIK_ERROR, "zc-trace",
+                        "setsockopt(SOL_TLS) fd=%d: g_tls_api is NULL (dlsym(RTLD_DEFAULT,"
+                        " EVP_*) never resolved OpenSSL symbols) -> ENOPROTOOPT",
+                        m_p_sock->get_fd());
             errno = ENOPROTOOPT;
             return -1;
         }
         if (unlikely(!m_p_rx_ring)) {
             si_ulp_logdbg("Cannot determine RX ring, TLS RX offload is impossible.");
+            PROBNIK_LOG(PROBNIK_ERROR, "zc-trace",
+                        "setsockopt(SOL_TLS) fd=%d: m_p_rx_ring is NULL -> ENOPROTOOPT",
+                        m_p_sock->get_fd());
             errno = ENOPROTOOPT;
             return -1;
         }
         if (unlikely(m_p_tx_ring->get_ctx(0) != m_p_rx_ring->get_ctx(0))) {
             si_ulp_logdbg("TLS_RX doesn't support scenario where TX "
                           "and RX rings are on different IB contexts.");
+            PROBNIK_LOG(PROBNIK_ERROR, "zc-trace",
+                        "setsockopt(SOL_TLS) fd=%d: tx_ring ctx=%p != rx_ring ctx=%p"
+                        " (asymmetric TX/RX ring, likely multi-NIC/LAG topology) -> ENOPROTOOPT",
+                        m_p_sock->get_fd(), (void *)m_p_tx_ring->get_ctx(0),
+                        (void *)m_p_rx_ring->get_ctx(0));
             errno = ENOPROTOOPT;
             return -1;
         }
+        PROBNIK_LOG(PROBNIK_DEBUG, "zc-trace",
+                    "setsockopt(SOL_TLS) fd=%d: RX pre-checks passed (utls_supported=1,"
+                    " g_tls_api=%p, rx_ring=%p, tx_ring_ctx==rx_ring_ctx)",
+                    m_p_sock->get_fd(), (void *)g_tls_api, (void *)m_p_rx_ring);
     }
 
     switch (base_info->cipher_type) {
@@ -617,14 +648,29 @@ int sockinfo_tcp_ops_tls::setsockopt(int __level, int __optname, const void *__o
          * First, get TIR from the TX ring cache. Create new one in
          * the RX ring if the cache is empty.
          */
-        m_p_tir = m_p_tx_ring->tls_create_tir(true) ?: m_p_rx_ring->tls_create_tir(false);
+        xlio_tir *tir_from_tx_cache = m_p_tx_ring->tls_create_tir(true);
+        m_p_tir = tir_from_tx_cache ?: m_p_rx_ring->tls_create_tir(false);
+        PROBNIK_LOG(PROBNIK_DEBUG, "zc-trace",
+                    "setsockopt(SOL_TLS) fd=%d: tls_create_tir tx_cache=%s rx_fresh=%s tir=%p",
+                    m_p_sock->get_fd(), tir_from_tx_cache ? "hit" : "miss",
+                    (!tir_from_tx_cache && m_p_tir) ? "created" : "n/a", (void *)m_p_tir);
 
         m_p_sock->lock_tcp_con();
         if (m_p_tir) {
             err_t err = tls_rx_consume_ready_packets();
             if (unlikely(err != ERR_OK)) {
                 si_ulp_logdbg("Cannot consume ready packets, TLS RX offload will likely fail.");
+                PROBNIK_LOG(PROBNIK_WARN, "zc-trace",
+                            "setsockopt(SOL_TLS) fd=%d: tls_rx_consume_ready_packets"
+                            " err=%d (backlog already delivered before TIR attach"
+                            " -> offload will likely fail/resync)",
+                            m_p_sock->get_fd(), (int)err);
             }
+        } else {
+            PROBNIK_LOG(PROBNIK_ERROR, "zc-trace",
+                        "setsockopt(SOL_TLS) fd=%d: tls_create_tir failed on both TX-cache"
+                        " and RX ring -> TLS RX offload setup failed",
+                        m_p_sock->get_fd());
         }
 
         if (m_p_tir) {
@@ -634,11 +680,19 @@ int sockinfo_tcp_ops_tls::setsockopt(int __level, int __optname, const void *__o
             if (m_p_tx_ring->credits_get(SQ_CREDITS_TLS_RX_CONTEXT)) {
                 rc = m_p_tx_ring->tls_context_setup_rx(m_p_tir, &m_tls_info_rx, next_seqno_rx,
                                                        &rx_comp_callback, this);
+                PROBNIK_LOG(rc == 0 ? PROBNIK_DEBUG : PROBNIK_ERROR, "zc-trace",
+                            "setsockopt(SOL_TLS) fd=%d: tls_context_setup_rx(tir=%p,"
+                            " next_seqno_rx=%u) rc=%d", m_p_sock->get_fd(), (void *)m_p_tir,
+                            next_seqno_rx, rc);
                 if (unlikely(rc != 0)) {
                     m_p_tx_ring->credits_return(SQ_CREDITS_TLS_RX_CONTEXT);
                 }
             } else {
                 si_ulp_logdbg("No available space in SQ to create TLS RX context");
+                PROBNIK_LOG(PROBNIK_ERROR, "zc-trace",
+                            "setsockopt(SOL_TLS) fd=%d: credits_get(SQ_CREDITS_TLS_RX_CONTEXT)"
+                            " failed -> no SQ space for TLS RX context",
+                            m_p_sock->get_fd());
             }
             if (unlikely(rc != 0)) {
                 m_p_tx_ring->tls_release_tir(m_p_tir);
@@ -647,11 +701,19 @@ int sockinfo_tcp_ops_tls::setsockopt(int __level, int __optname, const void *__o
         }
         if (unlikely(!m_p_tir)) {
             si_ulp_logdbg("TLS RX offload setup failed");
+            PROBNIK_LOG(PROBNIK_ERROR, "zc-trace",
+                        "setsockopt(SOL_TLS) fd=%d: TLS RX offload setup failed -> ENOPROTOOPT,"
+                        " OpenSSL will fall back to software RX for this connection",
+                        m_p_sock->get_fd());
             m_is_tls_rx = false;
             m_p_sock->unlock_tcp_con();
             errno = ENOPROTOOPT;
             return -1;
         }
+
+        PROBNIK_LOG(PROBNIK_INFO, "zc-trace",
+                    "setsockopt(SOL_TLS) fd=%d: TLS RX offload ACTIVE (tir=%p)",
+                    m_p_sock->get_fd(), (void *)m_p_tir);
 
         tcp_recv(m_p_sock->get_pcb(), sockinfo_tcp_ops_tls::rx_lwip_cb);
         if (m_p_sock->get_sock_stats()) {

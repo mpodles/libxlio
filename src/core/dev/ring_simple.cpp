@@ -10,6 +10,7 @@
 #include "util/valgrind.h"
 #include "util/sg_array.h"
 #include "sock/fd_collection.h"
+#include <probnik.h>
 
 #undef MODULE_NAME
 #define MODULE_NAME "ring_simple"

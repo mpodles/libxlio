@@ -6393,14 +6393,26 @@ bool sockinfo_tcp::is_utls_supported(int direction) const
     ring *p_ring = get_tx_ring();
 
     if (direction & UTLS_MODE_TX) {
-        result = result || (safe_mce_sys().enable_utls_tx && p_ring && p_ring->tls_tx_supported());
+        bool tx_supported = p_ring && p_ring->tls_tx_supported();
+        result = result || (safe_mce_sys().enable_utls_tx && tx_supported);
+        PROBNIK_LOG(PROBNIK_DEBUG, "zc-trace",
+                    "is_utls_supported fd=%d TX: XLIO_UTLS_TX=%d p_ring=%p"
+                    " ring.tls_tx_supported=%d -> %d",
+                    m_fd, safe_mce_sys().enable_utls_tx, (void *)p_ring, tx_supported,
+                    safe_mce_sys().enable_utls_tx && tx_supported);
     }
     if (direction & UTLS_MODE_RX) {
         /*
          * For RX support we still can use TX ring capabilities,
          * because it refers to the same NIC as RX ring.
          */
-        result = result || (safe_mce_sys().enable_utls_rx && p_ring && p_ring->tls_rx_supported());
+        bool rx_supported = p_ring && p_ring->tls_rx_supported();
+        result = result || (safe_mce_sys().enable_utls_rx && rx_supported);
+        PROBNIK_LOG(PROBNIK_DEBUG, "zc-trace",
+                    "is_utls_supported fd=%d RX: XLIO_UTLS_RX=%d p_ring=%p"
+                    " ring.tls_rx_supported=%d -> %d",
+                    m_fd, safe_mce_sys().enable_utls_rx, (void *)p_ring, rx_supported,
+                    safe_mce_sys().enable_utls_rx && rx_supported);
     }
 #else
     NOT_IN_USE(direction);
